@@ -201,7 +201,7 @@ docker compose up -d --build
 | `./data` | `/app/data` |
 | `./config` | `/app/config` |
 | `./logs` | `/app/logs`（建议） |
-| `./web` | `/app/web`（建议） |
+| `./web` | `/app/web`（可选；空卷会自动从镜像复制 `dashboard.html`） |
 
 ### Zeabur 设置
 > 重要：如果你挂载了空的 `config` 卷，启动脚本会自动从镜像默认配置复制 `config/config.yaml`。  
@@ -222,7 +222,7 @@ docker compose up -d --build
    - `data` → `/app/data`
    - `config` → `/app/config`
    - 建议 `logs` → `/app/logs`
-   - 建议 `web` → `/app/web`
+   - 可选 `web` → `/app/web`（空卷会自动种子 `dashboard.html`；也可不挂 web）
 
 ### 说明
 - 根目录已移除 `package.json`，避免再被识别成 Node 去找 `/src/index.js`

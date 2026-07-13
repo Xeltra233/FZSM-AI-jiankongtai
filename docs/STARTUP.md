@@ -35,7 +35,7 @@ setx FZSM_ADMIN_PASSWORD "你的管理密码"
 
 ### 建议挂
 - `./logs` → `/app/logs`
-- `./web` → `/app/web`
+- `./web` → `/app/web`（可选；空卷会自动种子 dashboard.html）
 
 ### 环境变量
 - `FZSM_ADMIN_PASSWORD=你的管理密码`

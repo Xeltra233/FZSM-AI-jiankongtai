@@ -2,13 +2,14 @@
 set -eu
 cd /app
 
-mkdir -p /app/auth /app/data /app/logs /app/config
+mkdir -p /app/auth /app/data /app/logs /app/config /app/web
 
 CFG="${FZSM_CONFIG:-config/config.yaml}"
 HOST="${HOST:-0.0.0.0}"
 BOT_MODE="${BOT_MODE:-live}"
 ENABLE_BOT="${ENABLE_BOT:-1}"
 LOG_MAX_AGE_DAYS="${LOG_MAX_AGE_DAYS:-7}"
+HTML_PATH="${FZSM_HTML:-web/dashboard.html}"
 
 # Resolve listen port robustly.
 # Zeabur/users may set PORT="${WEB_PORT}" literally, or only set WEB_PORT.
@@ -60,7 +61,6 @@ seed_config() {
       cp -f /app/config.default/config/config.yaml "$CFG"
     fi
   fi
-  # also seed any other default files if target dir empty-ish
   if [ -d /app/config.default ]; then
     for f in /app/config.default/*; do
       [ -e "$f" ] || continue
@@ -71,7 +71,39 @@ seed_config() {
     done
   fi
 }
+
+# Empty web volume mounts hide image files. Seed dashboard assets from baked defaults.
+seed_web() {
+  mkdir -p /app/web
+  if [ ! -f /app/web/dashboard.html ]; then
+    if [ -f /app/web.default/dashboard.html ]; then
+      echo "seeding web assets from /app/web.default"
+      # copy missing files only, never overwrite user customizations
+      if command -v cp >/dev/null 2>&1; then
+        # shell-compatible recursive seed of missing paths
+        (
+          cd /app/web.default
+          find . -type f 2>/dev/null | while IFS= read -r rel; do
+            rel=${rel#./}
+            [ -n "$rel" ] || continue
+            if [ ! -e "/app/web/$rel" ]; then
+              mkdir -p "/app/web/$(dirname "$rel")"
+              cp -f "/app/web.default/$rel" "/app/web/$rel" 2>/dev/null || true
+            fi
+          done
+        )
+      fi
+    fi
+  fi
+  # final fallback for html path
+  if [ ! -f "$HTML_PATH" ] && [ -f /app/web.default/dashboard.html ]; then
+    HTML_PATH="/app/web.default/dashboard.html"
+    echo "using fallback html: $HTML_PATH"
+  fi
+}
+
 seed_config
+seed_web
 
 # shell-side log cleanup (for redirected *.out.log/*.err.log and old rotations)
 cleanup_logs() {
@@ -87,8 +119,16 @@ if [ ! -f "$CFG" ]; then
   exit 1
 fi
 
+if [ ! -f "$HTML_PATH" ]; then
+  echo "dashboard html not found: $HTML_PATH" >&2
+  echo "hint: remove empty web volume mount, or ensure web/dashboard.html exists" >&2
+  ls -la /app /app/web /app/web.default 2>/dev/null || true
+  exit 1
+fi
+
 echo "using config: $CFG"
 ls -la "$CFG" || true
+echo "using html: $HTML_PATH"
 if [ "$RAW_PORT" != "$PORT" ]; then
   echo "PORT normalized: raw='${RAW_PORT}' web_port='${RAW_WEB_PORT}' -> ${PORT}"
 fi
@@ -103,4 +143,4 @@ else
 fi
 
 echo "starting fzsm-dashboard on ${HOST}:${PORT}"
-exec ./bin/fzsm-dashboard -c "$CFG" -host "$HOST" -port "$PORT" -html web/dashboard.html
+exec ./bin/fzsm-dashboard -c "$CFG" -host "$HOST" -port "$PORT" -html "$HTML_PATH"
