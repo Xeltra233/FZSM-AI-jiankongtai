@@ -8,7 +8,7 @@ import (
   "fzsmbot/internal/storage"
 )
 func main(){
-  cfg,err:=config.Load("config.yaml"); if err!=nil {panic(err)}
+  cfg,err:=config.Load("config/config.yaml"); if err!=nil {panic(err)}
   fmt.Println("api_base=", cfg.APIBase, "cookie=", cfg.CookieFile)
   st,err:=storage.Open(cfg.Storage.DBPath); if err!=nil {panic(err)}; defer st.Close()
   c,err:=client.New(cfg.APIBase,"https://api.fanzisima.xyz",cfg.CookieFile); if err!=nil {panic(err)}

@@ -13,3 +13,4 @@ if not exist bin\fzsm-bot.exe (
   exit /b 1
 )
 call start_bot.bat
+

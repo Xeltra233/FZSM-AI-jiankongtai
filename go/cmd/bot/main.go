@@ -22,7 +22,7 @@ import (
 // Default sidecar mode writes service_go only.
 // Pass -primary to own service/last_loop as main process.
 func main() {
-        cfgPath := flag.String("c", "config.yaml", "config path")
+        cfgPath := flag.String("c", "config/config.yaml", "config path")
         once := flag.Bool("once", false, "run one cycle then exit")
         every := flag.Int("every", 18, "loop seconds")
         primary := flag.Bool("primary", false, "write service as primary")

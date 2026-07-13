@@ -1,4 +1,4 @@
-﻿# 启动说明（Go-only）
+# 启动说明（Go-only）
 
 ## 1. 准备 cookie
 把业务 cookie 放到 `auth/cookies.json`，通常包含 `fz_lottery`。
@@ -31,7 +31,7 @@ setx FZSM_ADMIN_PASSWORD "你的管理密码"
 ### 必挂
 - `./auth` → `/app/auth`
 - `./data` → `/app/data`
-- `./config.yaml` → `/app/config.yaml`
+- `./config` → `/app/config`
 
 ### 建议挂
 - `./logs` → `/app/logs`
@@ -44,7 +44,7 @@ setx FZSM_ADMIN_PASSWORD "你的管理密码"
 
 ## 5. 体检
 ```bat
-bin\fzsm-doctor.exe -c config.yaml
+bin\fzsm-doctor.exe -c config/config.yaml
 ```
 
 ## 6. 停止
@@ -54,9 +54,9 @@ stop_bot.bat
 
 ## 7. 常用命令
 ```bat
-bin\fzsm-bot.exe -c config.yaml -primary -mode live -every 18
-bin\fzsm-dashboard.exe -c config.yaml -port 8787
-bin\fzsm-bot.exe -c config.yaml --once -mode paper
+bin\fzsm-bot.exe -c config/config.yaml -primary -mode live -every 18
+bin\fzsm-dashboard.exe -c config/config.yaml -port 8787
+bin\fzsm-bot.exe -c config/config.yaml --once -mode paper
 bin\fzsm-doctor.exe --map
 ```
 

@@ -13,15 +13,15 @@ import (
 )
 
 func main() {
-  cfgPath := "config.yaml"
+  cfgPath := "config/config.yaml"
   if _, err := os.Stat(cfgPath); err != nil {
-    cfgPath = filepath.Join("..", "config.yaml")
+    cfgPath = filepath.Join("..", "config", "config.yaml")
   }
   cfg, err := config.Load(cfgPath)
   if err != nil { panic(err) }
   // normalize relative storage/cookie paths when launched from go/
   if !filepath.IsAbs(cfg.Storage.DBPath) && filepath.Base(filepath.Dir(cfgPath)) != "." {
-    // if config loaded from ../config.yaml keep paths relative to project root
+    // if config loaded from ../config/config.yaml keep paths relative to project root
     root := filepath.Dir(cfgPath)
     cfg.Storage.DBPath = filepath.Join(root, cfg.Storage.DBPath)
     cfg.CookieFile = filepath.Join(root, cfg.CookieFile)

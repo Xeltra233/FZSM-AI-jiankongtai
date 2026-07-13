@@ -8,7 +8,7 @@ import (
 )
 func TestOverviewMarshal(t *testing.T){
   root := `C:\project\test\fzsm炒股`
-  cfg, err := config.Load(root + `\config.yaml`)
+  cfg, err := config.Load(root + `\config\config.yaml`)
   if err != nil { t.Fatal(err) }
   st, err := storage.Open(root + `\` + cfg.Storage.DBPath)
   if err != nil { t.Fatal(err) }

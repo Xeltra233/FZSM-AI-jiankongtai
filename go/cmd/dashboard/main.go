@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-        cfgPath := flag.String("c", "config.yaml", "config path")
+        cfgPath := flag.String("c", "config/config.yaml", "config path")
         host := flag.String("host", "", "override host")
         port := flag.Int("port", 0, "override port")
         htmlPath := flag.String("html", "web/dashboard.html", "dashboard html path")

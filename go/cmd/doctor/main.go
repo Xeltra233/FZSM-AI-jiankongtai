@@ -30,7 +30,7 @@ func add(checks *[]check, name string, ok bool, detail string) {
 }
 
 func main() {
-        cfgPath := flag.String("c", "config.yaml", "config path")
+        cfgPath := flag.String("c", "config/config.yaml", "config path")
         jsonOut := flag.Bool("json", false, "print json summary")
         mapOnly := flag.Bool("map", false, "print feature map only")
         flag.Parse()
@@ -42,7 +42,7 @@ func main() {
 
         checks := []check{}
         cfg, err := config.Load(*cfgPath)
-        add(&checks, "config.yaml", err == nil, *cfgPath)
+        add(&checks, "config/config.yaml", err == nil, *cfgPath)
         if err != nil {
                 failSummary(checks, *jsonOut)
                 os.Exit(1)
@@ -193,8 +193,8 @@ func main() {
                 }
                 fmt.Println("\nRepair hints:")
                 fmt.Println(" - cookie ??: python -m src.auth_helper login")
-                fmt.Println(" - ?? Go bot: bin\\fzsm-bot.exe -c config.yaml --once")
-                fmt.Println(" - ?? Go dashboard: bin\\fzsm-dashboard.exe -c config.yaml -port 8788")
+                fmt.Println(" - Go bot: bin\\fzsm-bot.exe -c config/config.yaml --once")
+                fmt.Println(" - Go dashboard: bin\\fzsm-dashboard.exe -c config/config.yaml -port 8787")
                 if *jsonOut {
                         b, _ := json.MarshalIndent(map[string]any{"ok": false, "failed": failed, "checks": checks, "ts": time.Now().Unix()}, "", "  ")
                         fmt.Println(string(b))
