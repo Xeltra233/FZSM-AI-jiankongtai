@@ -255,9 +255,21 @@ func recordSlotSample(st *storage.Storage, delta float64, win bool) map[string]a
 	edge["sum_delta"] = sumDelta
 	edge["wins"] = wins
 	edge["last_delta"] = delta
-	edge["last_ts"] = float64(time.Now().UnixNano()) / 1e9
+	ts := float64(time.Now().UnixNano()) / 1e9
+	edge["last_ts"] = ts
+	// rolling history (latest first, keep 20)
+	item := map[string]any{"ts": ts, "delta": delta, "win": win}
+	hist := []any{item}
+	if old := asSlice(edge["history"]); len(old) > 0 {
+		hist = append(hist, old...)
+	}
+	if len(hist) > 20 {
+		hist = hist[:20]
+	}
+	edge["history"] = hist
 	if samples > 0 {
 		edge["obs_ev_per_spin"] = sumDelta / float64(samples)
+		edge["win_rate"] = float64(wins) / float64(samples)
 		bet := asFloat(edge["bet"])
 		if bet > 0 {
 			edge["obs_rtp"] = 1.0 + (sumDelta / float64(samples) / bet)

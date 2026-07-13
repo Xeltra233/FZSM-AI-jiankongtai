@@ -1172,6 +1172,21 @@
     body.login-locked .shell{visibility:hidden; pointer-events:none}
     #topLogoutBtn{display:none; min-width:88px}
     body:not(.login-locked) #topLogoutBtn{display:inline-flex}
+
+    .risk-edge-panel{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+    .risk-edge-item{padding:10px;border-radius:12px;border:1px solid rgba(210,230,255,.12);background:rgba(255,255,255,.035)}
+    .risk-edge-item .rh{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px}
+    .risk-edge-item .rt{font-weight:760;font-size:13px}
+    .risk-edge-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+    .risk-edge-meta .k{font-size:10px;color:var(--muted)}
+    .risk-edge-meta .v{font-size:12px;font-weight:720;margin-top:2px;word-break:break-word}
+    .risk-edge-hist{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+    .risk-edge-hist .h{font-size:10px;padding:2px 6px;border-radius:999px;border:1px solid rgba(210,230,255,.14);background:rgba(255,255,255,.04)}
+    .risk-edge-hist .h.win{color:var(--good);border-color:rgba(61,255,176,.28)}
+    .risk-edge-hist .h.lose{color:var(--bad);border-color:rgba(255,107,138,.28)}
+    .risk-edge-msg{margin-top:6px;color:var(--muted);font-size:11px;line-height:1.4}
+    @media (max-width:720px){.risk-edge-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
 </style>
 </head>
 <body class="login-locked">
@@ -1399,6 +1414,9 @@
             <div class="farm-note" style="margin-top:10px">赚钱功能开关（写入本地，下一轮 bot 生效）</div>
             <div class="flag-row" id="featureFlagPanel"><span class="note">加载中...</span></div>
             <div class="farm-note" id="sideNote">侧线: IPO/对赌/基金</div>
+            <div class="farm-note" style="margin-top:10px">高风险门槛总览（方案B）</div>
+            <div class="risk-edge-panel" id="riskEdgePanel"><span class="note">加载中...</span></div>
+            <div class="farm-note" id="riskEdgeHint">理论/观察 RTP·EV 与最近样本；负期望默认拦截</div>
           </div>
           <div class="card">
             <div class="card-head"><h2>服务状态</h2><div class="hint" id="svcHint">-</div></div>
@@ -3386,7 +3404,88 @@ cards.push(
   }
 
   
-  function renderAuthKeepalive(d){
+  
+  function riskProbeText(edge){
+    if(!edge || typeof edge!=='object') return '未分析';
+    const probe = edge.probe_status || (edge.edge_ok?'ready':(edge.gate==='theory_negative'?'blocked':'collecting'));
+    if(probe==='ready' || edge.edge_ok) return '可自动';
+    if(probe==='blocked' || edge.gate==='theory_negative') return '拦截';
+    if(probe==='collecting' || edge.gate==='no_positive_edge') return '收集中';
+    return String(edge.gate||probe||'-');
+  }
+  function riskBadgeClass(edge){
+    if(!edge || typeof edge!=='object') return 'warn';
+    if(edge.edge_ok) return 'ok';
+    if(edge.probe_status==='blocked' || edge.gate==='theory_negative') return 'bad';
+    return 'warn';
+  }
+  function riskHistoryHtml(edge){
+    const hist = Array.isArray(edge && edge.history) ? edge.history : [];
+    if(!hist.length) return '<div class="risk-edge-hist"><span class="h">暂无样本历史</span></div>';
+    const parts = hist.slice(0,12).map(it => {
+      const d = Number(it && it.delta);
+      const win = !!(it && (it.win===true || d>0));
+      const txt = (Number.isFinite(d)? ((d>=0?'+':'')+Math.round(d).toLocaleString()) : '-');
+      return '<span class="h '+(win?'win':'lose')+'">'+escapeHtml(txt)+'</span>';
+    });
+    return '<div class="risk-edge-hist">'+parts.join('')+'</div>';
+  }
+  function renderRiskEdges(d){
+    const box = document.getElementById('riskEdgePanel');
+    if(!box) return;
+    const edges = (d && d.risk_edges) || {};
+    // also merge live module analysis edges if overview ones empty
+    const mods = (d && d.modules) || {};
+    const lot = mods.lottery || {};
+    const lotA = lot.analysis || {};
+    const der = mods.derivatives || {};
+    const derA = der.analysis || {};
+    const bro = mods.brokers || {};
+    const broA = bro.analysis || {};
+    const items = [
+      {id:'slot', label:'老虎机/奶龙机', edge: edges.slot && Object.keys(edges.slot).length? edges.slot : (lotA.slot_edge||lot.slot_edge||{})},
+      {id:'yolo', label:'搏一搏', edge: edges.yolo && Object.keys(edges.yolo).length? edges.yolo : (lotA.yolo_edge||lot.yolo_edge||{})},
+      {id:'vip_bet', label:'VIP下注', edge: edges.vip_bet && Object.keys(edges.vip_bet).length? edges.vip_bet : (lotA.vip_bet_edge||lot.vip_bet_edge||{})},
+      {id:'borrow', label:'借贷', edge: edges.borrow && Object.keys(edges.borrow).length? edges.borrow : (lotA.borrow_edge||lot.borrow_edge||{})},
+      {id:'derivatives', label:'期货/杠杆', edge: edges.derivatives && Object.keys(edges.derivatives).length? edges.derivatives : (derA.risk_edge||der.risk_edge||{})},
+      {id:'underwrite', label:'承销', edge: edges.underwrite && Object.keys(edges.underwrite).length? edges.underwrite : (broA.underwrite_edge||bro.underwrite_edge||{})},
+    ];
+    let readyN=0, blockN=0, collectN=0;
+    const html = items.map(it => {
+      const e = it.edge || {};
+      const st = riskProbeText(e);
+      const cls = riskBadgeClass(e);
+      if(cls==='ok') readyN++; else if(cls==='bad') blockN++; else collectN++;
+      const samples = e.samples!=null? e.samples : 0;
+      const target = e.sample_target!=null? e.sample_target : (e.min_samples!=null?e.min_samples:'-');
+      const tRtp = fmtSlotRtp(e.theory_rtp);
+      const tEv = fmtSlotEv(e.theory_ev!=null?e.theory_ev:e.theory_ev_per_spin);
+      const oRtp = Number(samples)>0 ? fmtSlotRtp(e.obs_rtp) : '-';
+      const oEv = Number(samples)>0 ? fmtSlotEv(e.obs_ev!=null?e.obs_ev:e.obs_ev_per_spin) : '-';
+      const wr = (Number(samples)>0 && e.win_rate!=null) ? ((Number(e.win_rate)*100).toFixed(1)+'%') : '-';
+      const msg = e.message || e.note || '等待 bot 下一轮写入 edge';
+      return '<div class="risk-edge-item">'
+        + '<div class="rh"><div class="rt">'+escapeHtml(it.label)+'</div>'
+        + '<span class="badge '+cls+'">'+escapeHtml(st)+'</span></div>'
+        + '<div class="risk-edge-meta">'
+        + '<div><div class="k">理论RTP</div><div class="v">'+escapeHtml(tRtp)+'</div></div>'
+        + '<div><div class="k">理论EV</div><div class="v">'+escapeHtml(tEv)+'</div></div>'
+        + '<div><div class="k">观察RTP</div><div class="v">'+escapeHtml(oRtp)+'</div></div>'
+        + '<div><div class="k">观察EV</div><div class="v">'+escapeHtml(oEv)+'</div></div>'
+        + '<div><div class="k">样本</div><div class="v">'+escapeHtml(String(samples)+'/'+String(target))+'</div></div>'
+        + '<div><div class="k">胜率</div><div class="v">'+escapeHtml(wr)+'</div></div>'
+        + '<div><div class="k">门槛</div><div class="v">'+escapeHtml(String(e.gate||'-'))+'</div></div>'
+        + '<div><div class="k">最近Δ</div><div class="v">'+escapeHtml(e.last_delta==null?'-':fmtSlotEv(e.last_delta))+'</div></div>'
+        + '</div>'
+        + riskHistoryHtml(e)
+        + '<div class="risk-edge-msg">'+escapeHtml(String(msg))+'</div>'
+        + '</div>';
+    }).join('');
+    setHtmlIfChanged(box, html || '<span class="note">暂无 edge 数据</span>');
+    setTextIfChanged('riskEdgeHint', '可自动 '+readyN+' · 拦截 '+blockN+' · 收集/分析 '+(items.length-readyN-blockN)+' · 样本点为最近盈亏Δ');
+  }
+
+function renderAuthKeepalive(d){
     const el = document.getElementById('authKeepaliveBox');
     if(!el) return;
     const ka = d.auth_keepalive || {};
@@ -4018,6 +4117,7 @@ async function refresh(manual=false){
     renderInfo(d);
     renderFeatureFlagPanel(d);
     renderAuthKeepalive(d);
+    renderRiskEdges(d);
     if(currentTab==='control') refreshCookieManager({silent:true});
     bindCardTilt(document);
   }catch(e){

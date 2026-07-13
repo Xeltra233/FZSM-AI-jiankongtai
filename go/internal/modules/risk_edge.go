@@ -126,7 +126,17 @@ func recordRiskSample(st *storage.Storage, key string, delta float64, win bool) 
 	edge["sum_delta"] = sumDelta
 	edge["wins"] = wins
 	edge["last_delta"] = delta
-	edge["last_ts"] = float64(time.Now().UnixNano()) / 1e9
+	ts := float64(time.Now().UnixNano()) / 1e9
+	edge["last_ts"] = ts
+	item := map[string]any{"ts": ts, "delta": delta, "win": win}
+	hist := []any{item}
+	if old := asSlice(edge["history"]); len(old) > 0 {
+		hist = append(hist, old...)
+	}
+	if len(hist) > 20 {
+		hist = hist[:20]
+	}
+	edge["history"] = hist
 	if samples > 0 {
 		edge["obs_ev"] = sumDelta / float64(samples)
 		edge["win_rate"] = float64(wins) / float64(samples)
