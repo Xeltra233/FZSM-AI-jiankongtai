@@ -838,7 +838,7 @@
     .toast.ok .toast-bar>i{ background:linear-gradient(90deg,#3dffb0,#6ea8ff) }
     @keyframes toastBar{ from{ transform:scaleX(1)} to{ transform:scaleX(0)} }
     .modal-mask{
-      position:fixed; inset:0; z-index:70; display:none; place-items:center;
+      position:fixed; inset:0; z-index:1200; display:none; place-items:center;
       background:rgba(2,6,14,.55); backdrop-filter:blur(10px) saturate(140%);
       -webkit-backdrop-filter:blur(10px) saturate(140%);
       padding:18px
@@ -861,7 +861,8 @@
     @keyframes modalIn{ to{ transform:translateY(0) scale(1)} }
     .modal h3{ margin:0 0 6px; font-size:16px }
     .modal p{ margin:0; color:var(--muted); font-size:13px; line-height:1.55 }
-    .modal .modal-actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:14px; flex-wrap:wrap }
+    .modal .modal-actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:14px; flex-wrap:wrap; position:relative; z-index:2 }
+    #detailClose, #modalOk, #modalCancel{ position:relative; z-index:3; pointer-events:auto; cursor:pointer }
     .kbd{
       display:inline-flex; align-items:center; justify-content:center;
       min-width:18px; height:18px; padding:0 5px; border-radius:6px;
@@ -1479,7 +1480,7 @@
             <div class="farm-note" style="margin-top:10px">赚钱功能开关（写入本地，下一轮 bot 生效）</div>
             <div class="flag-row" id="featureFlagPanel"><span class="note">加载中...</span></div>
             <div class="farm-note" id="sideNote">侧线: IPO/对赌/基金</div>
-            <div class="farm-note" style="margin-top:10px">高风险门槛总览（方案B）</div>
+            <div class="farm-note" style="margin-top:10px">高风险门槛总览</div>
             <div class="farm-note" id="riskEdgePolicyNote">门槛门控与样本历史可开关；关闭门控后仅按模块开关执行（硬前置仍生效）</div>
             <div class="flag-row" id="riskEdgePolicyFlags"><span class="note">加载中...</span></div>
             <div class="risk-edge-toggle" id="riskEdgeToggleRow">
@@ -1637,7 +1638,7 @@
       <p id="detailDesc">-</p>
       <div id="detailBody"></div>
       <div class="modal-actions">
-        <button id="detailClose" class="primary" type="button">关闭</button>
+        <button id="detailClose" class="primary" type="button" onclick="event.preventDefault();event.stopPropagation();closeDetailModal();">关闭</button>
       </div>
     </div>
   </div>
@@ -2183,7 +2184,7 @@ async function applyControl(mode){
       disabled:'功能未开启',
       forbidden:'无权限',
       unauthorized:'未授权',
-      need_rtp_edge_proof:'方案B：需证明RTP/EV优势后才自动转',
+      need_rtp_edge_proof:'正EV门槛：需证明RTP/EV优势后才自动转',
       slot_default_off_need_rtp_or_manual:'老虎机默认关：打开后先分析RTP，无优势不转',
       high_variance_default_off:'高波动玩法默认关闭',
       default_no_auto_borrow:'默认不自动借款',
@@ -2340,7 +2341,7 @@ async function applyControl(mode){
       ['negative_or_ineligible', '负EV或不符合条件'],
       ['no_signed_broker_yet', '尚未签约券商'],
       ['high_variance_default_off', '高波动玩法默认关闭'],
-      ['need_rtp_edge_proof', '方案B：需证明RTP/EV优势后才自动转'],
+      ['need_rtp_edge_proof', '正EV门槛：需证明RTP/EV优势后才自动转'],
       ['slot_default_off_need_rtp_or_manual', '老虎机默认关：打开后先分析RTP，无优势不转'],
       ['already_checked_or_disabled', '今日已签到'],
       ['default_no_auto_borrow', '默认不自动借款'],
@@ -2895,7 +2896,7 @@ function earnBadgeClass(st){
     const gateOn = flagValue(flags, 'risk.edge_gate_enabled', true);
     const histOn = flagValue(flags, 'risk.edge_history_enabled', true);
     box.innerHTML = [
-      flagSwitchHtml('risk.edge_gate_enabled', '方案B门槛门控', gateOn, 'mid'),
+      flagSwitchHtml('risk.edge_gate_enabled', '正EV门槛门控', gateOn, 'mid'),
       flagSwitchHtml('risk.edge_history_enabled', '样本历史记录', histOn, 'low')
     ].join('');
     const note = document.getElementById('riskEdgePolicyNote');
@@ -3025,7 +3026,7 @@ function renderFeatureFlagPanel(d){
       + '</div>'
       + '<div class="earn-note">'+escapeHtml(prefTxt)+' · '+escapeHtml(gateTxt)+'</div>'
       + '<div class="vip-room-list">'+listHtml+'</div>'
-      + '<div class="earn-note">说明：选择只写入本地偏好；未选手动房时 bot 按自动策略选公开房。正式进房/下注仍受 auto_vip 开关、余额门槛与方案B门槛；密码房需先输入密码；余额不足不盲进。</div>'
+      + '<div class="earn-note">说明：选择只写入本地偏好；未选手动房时 bot 按自动策略选公开房。正式进房/下注仍受「进VIP」开关、余额门槛与正EV门槛；密码房需先输入密码；余额不足不盲进。</div>'
       + '</div>';
   }
   function onVipRoomSearch(v){
@@ -4114,17 +4115,35 @@ cards.push(
     document.getElementById('detailTitle').textContent = title || '详情';
     document.getElementById('detailDesc').textContent = desc || '';
     document.getElementById('detailBody').innerHTML = bodyHtml || '';
+    mask.style.display = '';
     mask.classList.add('show');
+    // re-bind close every open (defensive against stale listeners / cached pages)
+    try{
+      const btn = document.getElementById('detailClose');
+      if(btn){
+        btn.onclick = function(ev){
+          try{ if(ev){ ev.preventDefault(); ev.stopPropagation(); } }catch(e){}
+          closeDetailModal();
+        };
+      }
+    }catch(e){}
     setTimeout(()=>{ const b=document.getElementById('detailClose'); if(b) b.focus(); }, 30);
   }
   function closeDetailModal(){
-    const mask = document.getElementById('detailMask');
-    if(mask) mask.classList.remove('show');
     try{
-      // prevent stuck focus/overlay after tab switch from inside modal
+      const mask = document.getElementById('detailMask');
+      if(mask){
+        mask.classList.remove('show');
+        // force hide even if class toggle races with animation/css
+        mask.style.display = 'none';
+        setTimeout(()=>{ try{ if(!mask.classList.contains('show')) mask.style.display=''; }catch(e){} }, 50);
+      }
       if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
     }catch(e){}
   }
+  // ensure global callable for inline onclick
+  try{ window.closeDetailModal = closeDetailModal; }catch(e){}
+
   function showRiskEdgeDetail(id){
     if(!riskEdgeDetailEnabled){
       try{ toast('已关闭样本详情，可在控制页开关重新打开','warn','高风险门槛'); }catch(e){}
@@ -4187,7 +4206,7 @@ cards.push(
       + '</div>'
       + '<div class="farm-note" style="margin-top:10px">最近样本历史（Δ）· 本地导出不含登录凭证或密钥</div>'
       + histHtml;
-    openDetailModal(it.label + ' · 样本详情', '方案B门槛与最近自动样本', body);
+    openDetailModal(it.label + ' · 样本详情', '正EV门槛与最近自动样本', body);
   }
 
 
@@ -4851,6 +4870,18 @@ document.getElementById('tabs').addEventListener('click', (e)=>{
   switchTab(btn.dataset.tab);
 });
 
+// capture-phase delegate: always catch close button even if direct bind fails
+document.addEventListener('click', (e)=>{
+  const t = e.target;
+  if(!t) return;
+  const btn = (t.id === 'detailClose') ? t : (t.closest ? t.closest('#detailClose') : null);
+  if(btn){
+    e.preventDefault();
+    e.stopPropagation();
+    try{ closeDetailModal(); }catch(err){}
+    return;
+  }
+}, true);
 document.getElementById('detailClose')?.addEventListener('click', (e)=>{
   e.preventDefault();
   e.stopPropagation();
