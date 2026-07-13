@@ -135,6 +135,7 @@ risk:
 storage:
   db_path: "data/bot.db"
   log_dir: "logs"
+  # log auto-clean defaults in code: max_size=50MB, max_backups=7, max_age_days=7
 
 dashboard:
   host: "127.0.0.1"

@@ -13,6 +13,7 @@ services:
       ENABLE_BOT: "${ENABLE_BOT:-1}"
       BOT_MODE: "${BOT_MODE:-live}"
       BOT_EVERY: "${BOT_EVERY:-18}"
+      LOG_MAX_AGE_DAYS: "${LOG_MAX_AGE_DAYS:-7}"
       TZ: Asia/Shanghai
     volumes:
       - ./auth:/app/auth

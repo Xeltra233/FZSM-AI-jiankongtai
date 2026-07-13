@@ -86,3 +86,9 @@ docker compose up -d --build
 - `data` → `/app/data`
 - `config` → `/app/config`
 
+## 10. 日志自动清理
+- 单文件 > 50MB 轮转
+- 最多保留 7 个备份
+- 超过 7 天自动删除
+- 目录：`logs/`
+

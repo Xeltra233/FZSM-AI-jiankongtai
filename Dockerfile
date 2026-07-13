@@ -13,11 +13,13 @@ WORKDIR /app
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates tzdata curl \
  && rm -rf /var/lib/apt/lists/* \
- && mkdir -p /app/bin /app/auth /app/data /app/logs /app/config /app/web /app/scripts
+ && mkdir -p /app/bin /app/auth /app/data /app/logs /app/config /app/config.default /app/web /app/scripts
 ENV TZ=Asia/Shanghai
 COPY --from=build /out/fzsm-bot /app/bin/fzsm-bot
 COPY --from=build /out/fzsm-dashboard /app/bin/fzsm-dashboard
 COPY --from=build /out/fzsm-doctor /app/bin/fzsm-doctor
+# baked defaults (used when mounted empty config volume)
+COPY config/ /app/config.default/
 COPY config/ /app/config/
 COPY web/ /app/web/
 COPY scripts/start-server.sh /app/scripts/start-server.sh
@@ -29,7 +31,8 @@ ENV HOST=0.0.0.0 \
     FZSM_CONFIG=config/config.yaml \
     ENABLE_BOT=1 \
     BOT_MODE=live \
-    BOT_EVERY=18
+    BOT_EVERY=18 \
+    LOG_MAX_AGE_DAYS=7
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${PORT}/api/health" || exit 1
 CMD ["/app/scripts/start-server.sh"]

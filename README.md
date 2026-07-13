@@ -204,6 +204,9 @@ docker compose up -d --build
 | `./web` | `/app/web`（建议） |
 
 ### Zeabur 设置
+> 重要：如果你挂载了空的 `config` 卷，启动脚本会自动从镜像默认配置复制 `config/config.yaml`。  
+> 也可以不挂 `config`，直接使用镜像内置配置。
+
 1. **构建方式：Dockerfile**（不要选 Node）
 2. 端口：`8787`
 3. 环境变量：
@@ -224,6 +227,25 @@ docker compose up -d --build
 - 根目录已移除 `package.json`，避免再被识别成 Node 去找 `/src/index.js`
 - 本地 Playwright 工具在 `tools/playwright/`
 - 容器启动命令：`/app/scripts/start-server.sh`
+
+
+
+## 日志自动清理
+
+默认策略（代码内置）：
+- 单文件超过 **50MB** 自动轮转
+- 同名轮转文件最多保留 **7** 个
+- 超过 **7 天** 的旧日志自动删除
+- 启动时清理一次，之后每小时再清理
+- 日志目录：`logs/`（Docker 挂载 `./logs:/app/logs`）
+
+文件：
+- `logs/bot.log`
+- `logs/dashboard.log`
+- Docker 额外可能有 `logs/bot.out.log` / `logs/bot.err.log`（启动脚本重定向）
+
+可用环境变量（Docker 启动脚本）：
+- `LOG_MAX_AGE_DAYS=7`
 
 ## 备注
 
