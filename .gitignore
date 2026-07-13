@@ -44,3 +44,7 @@ Thumbs.db
 # cookie exports / dumps
 *cookies*.json
 fanzisima*.json
+
+# local tooling
+tools/**/node_modules/
+

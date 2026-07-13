@@ -1,0 +1,23 @@
+services:
+  fzsm:
+    build: .
+    image: fzsm-ai-jiankongtai:latest
+    container_name: fzsm-ai-jiankongtai
+    ports:
+      - "8787:8787"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "8787"
+      FZSM_CONFIG: "config/config.yaml"
+      FZSM_ADMIN_PASSWORD: "${FZSM_ADMIN_PASSWORD:-changeme}"
+      ENABLE_BOT: "${ENABLE_BOT:-1}"
+      BOT_MODE: "${BOT_MODE:-live}"
+      BOT_EVERY: "${BOT_EVERY:-18}"
+      TZ: Asia/Shanghai
+    volumes:
+      - ./auth:/app/auth
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./logs:/app/logs
+      - ./web:/app/web
+    restart: unless-stopped

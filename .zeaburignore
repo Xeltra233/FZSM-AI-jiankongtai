@@ -6,5 +6,6 @@ _patch_parts
 logs
 data
 auth
+tools
 *.exe
 *.exe~

@@ -176,45 +176,54 @@ docs/                文档
 
 
 
-## Zeabur / Docker 部署
+## Docker 部署（推荐，Zeabur 也用这个）
 
-本项目是 **Go 服务**，不是 Node `/src/index.js`。
+本项目是 **Go Docker 服务**，不是 Node。
 
-### 为什么会报 `Cannot find module '/src/index.js'`
-Zeabur 看到仓库根目录有 `package.json`，会误判成 Node 项目。  
-现已提供 `Dockerfile`，请用 **Dockerfile 部署**，不要用 Node 自动构建。
+### 关键文件
+- `Dockerfile`
+- `docker-compose.yml`
+- `scripts/start-server.sh`
+
+### 本地 / 服务器 Docker Compose
+```bat
+set FZSM_ADMIN_PASSWORD=你的管理密码
+docker compose up -d --build
+```
+打开：`http://服务器IP:8787/`  
+用户名：`admin`  
+密码：`FZSM_ADMIN_PASSWORD`
+
+### 必挂目录
+| 宿主机 | 容器 |
+|---|---|
+| `./auth` | `/app/auth` |
+| `./data` | `/app/data` |
+| `./config` | `/app/config` |
+| `./logs` | `/app/logs`（建议） |
+| `./web` | `/app/web`（建议） |
 
 ### Zeabur 设置
-1. 构建方式：`Dockerfile`
+1. **构建方式：Dockerfile**（不要选 Node）
 2. 端口：`8787`
 3. 环境变量：
-   - `FZSM_ADMIN_PASSWORD=你的管理密码`（必须）
+   - `FZSM_ADMIN_PASSWORD=你的管理密码`
    - `HOST=0.0.0.0`
    - `PORT=8787`
    - `ENABLE_BOT=1`
    - `BOT_MODE=live`
    - `BOT_EVERY=18`
-4. 持久化挂载（目录）：
+4. 挂载：
    - `auth` → `/app/auth`
    - `data` → `/app/data`
    - `config` → `/app/config`
-   - 建议：`logs` → `/app/logs`
-   - 建议：`web` → `/app/web`
+   - 建议 `logs` → `/app/logs`
+   - 建议 `web` → `/app/web`
 
-### 启动命令
-镜像默认：
-```sh
-/app/scripts/start-server.sh
-```
-会启动：
-- `fzsm-bot`（可关：`ENABLE_BOT=0`）
-- `fzsm-dashboard`（前台进程）
-
-### 首次上线
-1. 挂好 `auth/data/config`
-2. 设置 `FZSM_ADMIN_PASSWORD`
-3. 打开面板登录（用户名 `admin`）
-4. 在控制页导入业务 cookie（可直接贴原值）
+### 说明
+- 根目录已移除 `package.json`，避免再被识别成 Node 去找 `/src/index.js`
+- 本地 Playwright 工具在 `tools/playwright/`
+- 容器启动命令：`/app/scripts/start-server.sh`
 
 ## 备注
 

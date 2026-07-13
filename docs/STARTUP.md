@@ -67,11 +67,22 @@ bin\fzsm-doctor.exe --map
 - 服务器部署请设置 `FZSM_ADMIN_PASSWORD`
 - 详见 `docs/COOKIE_MANAGEMENT.md`
 
-## 9. Zeabur 崩溃修复要点
-如果日志出现 `Cannot find module '/src/index.js'`：
-1. 不要用 Node 自动部署
-2. 改用仓库根目录 `Dockerfile`
-3. 端口 `8787`
-4. 挂载目录：`auth`、`data`、`config`
-5. 设置 `FZSM_ADMIN_PASSWORD`
+
+## 9. Docker / Zeabur
+请使用仓库根目录：
+- `Dockerfile`
+- `docker-compose.yml`
+
+启动示例：
+```bat
+set FZSM_ADMIN_PASSWORD=你的管理密码
+docker compose up -d --build
+```
+
+不要用 Node 启动。若看到 `Cannot find module '/src/index.js'`，说明还在按 Node 部署，请改成 Dockerfile。
+
+挂载：
+- `auth` → `/app/auth`
+- `data` → `/app/data`
+- `config` → `/app/config`
 
