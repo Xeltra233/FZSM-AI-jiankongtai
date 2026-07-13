@@ -1209,6 +1209,27 @@
     .risk-edge-toggle{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 8px}
     .risk-edge-toggle .flag-sw{margin:0}
     .risk-edge-wrap[hidden]{display:none !important}
+    .vip-room-box{margin-top:8px;padding:8px;border:1px solid rgba(210,230,255,.12);border-radius:12px;background:rgba(255,255,255,.03)}
+    .vip-room-head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:6px}
+    .vip-room-head .ttl{font-weight:760;font-size:13px}
+    .vip-room-tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+    .vip-room-tools input{
+      min-width:140px; flex:1; border-radius:999px; border:1px solid rgba(210,230,255,.16);
+      background:rgba(0,0,0,.18); color:var(--text); padding:6px 10px; font-size:12px;
+    }
+    .vip-room-tools button,.vip-room-actions button{
+      border:1px solid rgba(210,230,255,.16); background:rgba(255,255,255,.04); color:var(--text);
+      border-radius:999px; padding:4px 10px; font-size:11px; font-weight:700; cursor:pointer;
+    }
+    .vip-room-tools button:hover,.vip-room-actions button:hover{border-color:rgba(126,182,255,.4); background:rgba(126,182,255,.12)}
+    .vip-room-list{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow:auto}
+    .vip-room-item{display:grid;grid-template-columns:1.2fr .8fr .8fr auto;gap:6px;align-items:center;padding:8px;border-radius:10px;border:1px solid rgba(210,230,255,.10);background:rgba(255,255,255,.02)}
+    .vip-room-item.on{border-color:rgba(126,182,255,.45); box-shadow:0 0 0 1px rgba(126,182,255,.18)}
+    .vip-room-item .k{font-size:10px;color:var(--muted)}
+    .vip-room-item .v{font-size:12px;font-weight:720}
+    .vip-room-actions{display:flex;flex-wrap:wrap;gap:4px}
+    @media (max-width:720px){.vip-room-item{grid-template-columns:1fr 1fr;}}
+
     .risk-edge-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
     .risk-edge-actions button,.risk-edge-toolbar button{
       border:1px solid rgba(210,230,255,.16);
@@ -2932,7 +2953,123 @@ function renderFeatureFlagPanel(d){
     return parts.filter(Boolean).join(' ' + String.fromCharCode(0x00b7) + ' ') || String.fromCharCode(0x6682,0x65e0);
   }
 
-  function renderEarn(d){
+  
+  let vipRoomFilter = '';
+  function vipRoomStatusZh(st){
+    st=String(st||'').toLowerCase();
+    const map={waiting:'等待中', betting:'下注中', ready:'准备中', playing:'进行中', settled:'已结算', finished:'已结束', closed:'已关闭'};
+    return map[st] || st || '-';
+  }
+  function getVipRoomsFromData(d){
+    const mods=((d||{}).modules||{});
+    const bundle = mods.modules || mods;
+    const lot = (bundle.lottery || {});
+    const lotA = lot.analysis || {};
+    const ctx = lotA.vip_context || lot.vip_context || {};
+    const state = lotA.vip_state || ctx.state || {};
+    let rooms = lotA.vip_rooms || state.rooms || state.public_rooms || state.list || [];
+    if(!Array.isArray(rooms)) rooms = [];
+    const pref = lotA.vip_room_pref || {};
+    const selected = lotA.vip_selected_room || ctx.selected_room || {};
+    return {rooms, pref, selected, ctx, canEnter: !!(state.can_enter || ctx.can_enter), minBal: Number(state.min_balance||ctx.min_balance||0), bal: Number(state.balance_lobster||ctx.balance_lobster||0), write: (ctx.write_paths||lotA.write_paths||{})};
+  }
+  function renderVipRoomPanel(d){
+    const info = getVipRoomsFromData(d||window.__lastOverview||{});
+    let rooms = info.rooms.slice();
+    const q = String(vipRoomFilter||'').trim().toLowerCase();
+    if(q){
+      rooms = rooms.filter(r => {
+        const id=String(r.id||r.room_id||'');
+        const st=String(r.status||'');
+        const owner=String(r.owner_name||r.owner_user_id||'');
+        const base=String(r.base_bet_lobster||r.base_bet||'');
+        return (id+' '+st+' '+owner+' '+base).toLowerCase().includes(q);
+      });
+    }
+    const prefId = String((info.pref&& (info.pref.room_id||info.pref.id))||'');
+    const selId = String((info.selected&& (info.selected.id||info.selected.room_id))||'');
+    const writeOk = !!(info.write && (info.write.join || info.write.bet));
+    let listHtml = '';
+    if(!rooms.length){
+      listHtml = '<div class="note">暂无公开房间（或筛选无结果）</div>';
+    } else {
+      listHtml = rooms.slice(0,30).map(r => {
+        const id=String(r.id||r.room_id||'');
+        const on = (prefId && prefId===id) || (!prefId && selId && selId===id);
+        const players = (r.player_count!=null?r.player_count:(r.players!=null?r.players:'-'));
+        const maxp = (r.max_players!=null?r.max_players:'-');
+        const base = (r.base_bet_lobster!=null?r.base_bet_lobster:(r.base_bet!=null?r.base_bet:'-'));
+        const pwd = r.has_password ? '有密码' : '公开';
+        const src = (r._source==='manual_pref'?'手动优先': (on && prefId?'已选': '可选'));
+        return '<div class="vip-room-item '+(on?'on':'')+'">'
+          + '<div><div class="k">房间</div><div class="v">#'+escapeHtml(id)+' · '+escapeHtml(pwd)+'</div></div>'
+          + '<div><div class="k">状态</div><div class="v">'+escapeHtml(vipRoomStatusZh(r.status))+'</div></div>'
+          + '<div><div class="k">人数/底注</div><div class="v">'+escapeHtml(String(players)+'/'+String(maxp))+' · '+escapeHtml(String(base))+'</div></div>'
+          + '<div class="vip-room-actions">'
+          + '<button type="button" onclick="setVipRoomPref(\''+id.replace(/'/g,'')+'\')">选择</button>'
+          + (on? '<button type="button" onclick="clearVipRoomPref()">取消</button>' : '')
+          + '</div></div>';
+      }).join('');
+    }
+    const gateTxt = info.canEnter ? '余额可正式入座' : ('余额不足正式入座（'+Math.round(info.bal||0)+' / 门槛 '+Math.round(info.minBal||0)+'）');
+    const prefTxt = prefId ? ('已选手动房间 #'+prefId+'（bot 优先尝试）') : '未手动选房 · 将按自动策略选房';
+    const writeTxt = writeOk ? '写路径可用' : '写路径未确认（不会假装可进房）';
+    return '<div class="vip-room-box">'
+      + '<div class="vip-room-head"><div class="ttl">VIP 房间选择</div><div class="note">'+escapeHtml(writeTxt)+'</div></div>'
+      + '<div class="vip-room-tools">'
+      + '<input id="vipRoomSearch" type="search" placeholder="搜索房间号/状态/底注" value="'+escapeHtml(vipRoomFilter)+'" oninput="onVipRoomSearch(this.value)">'
+      + '<button type="button" onclick="clearVipRoomPref()">恢复自动选房</button>'
+      + '</div>'
+      + '<div class="earn-note">'+escapeHtml(prefTxt)+' · '+escapeHtml(gateTxt)+'</div>'
+      + '<div class="vip-room-list">'+listHtml+'</div>'
+      + '<div class="earn-note">说明：选择只写入本地偏好；正式进房/下注仍受余额门槛与方案B门槛。余额不足时可观战收样，不会强制下注。</div>'
+      + '</div>';
+  }
+  function onVipRoomSearch(v){
+    vipRoomFilter = String(v||'');
+    // re-render earn section if possible
+    try{
+      if(typeof renderEarn==='function' && (window.__lastOverview||lastRiskEdgesPayload)){
+        const d = window.__lastOverview || lastRiskEdgesPayload;
+        // soft re-render by calling overview render path if available
+        if(typeof renderAll==='function') renderAll(d);
+        else if(typeof renderEarn==='function') renderEarn(d);
+      }
+    }catch(e){}
+  }
+  async function setVipRoomPref(roomId){
+    try{
+      const r = await fetch('/api/vip/room-pref', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({room_id: String(roomId), mode:'preferred'})
+      });
+      const j = await r.json();
+      if(!r.ok || j.ok===false){
+        toast((j&&j.error)||('HTTP '+r.status), 'err', '选房失败');
+        return;
+      }
+      toast('已选择房间 #'+roomId+'，bot 下轮优先尝试', 'ok', 'VIP选房');
+      // refresh overview
+      if(typeof refresh==='function'){ refresh(true); } else { location.reload(); }
+    }catch(e){ toast(String(e&&e.message||e), 'err', '选房失败'); }
+  }
+  async function clearVipRoomPref(){
+    try{
+      const r = await fetch('/api/vip/room-pref', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({clear:true})
+      });
+      const j = await r.json();
+      if(!r.ok || j.ok===false){
+        toast((j&&j.error)||('HTTP '+r.status), 'err', '清除失败');
+        return;
+      }
+      toast('已恢复自动选房', 'ok', 'VIP选房');
+      if(typeof refresh==='function'){ refresh(true); } else { location.reload(); }
+    }catch(e){ toast(String(e&&e.message||e), 'err', '清除失败'); }
+  }
+
+function renderEarn(d){
     const grid = document.getElementById('earnGrid');
     if(!grid) return;
     const flags = d.feature_flags || {};
@@ -3006,6 +3143,7 @@ function renderFeatureFlagPanel(d){
       + '<div class="earn-note">'+escapeHtml(riskEdgeNote(vipBetEdge,'VIP下注'))+'</div>'
       + '<div class="earn-note">VIP上下文 · '+escapeHtml(String((lotA.vip_context||lot.vip_context||vipBetEdge).context_label||'-')) + ' · ' + escapeHtml(String((lotA.vip_context||lot.vip_context||vipBetEdge).context_summary||vipBetEdge.message||'仅只读探测，不自动下注'))+'</div>'
       + '<div class="earn-note">VIP执行 · 写路径已确认（/rooms/{id}/join, /rounds/{id}/bet）；正式入座需余额门槛</div>'
+      + renderVipRoomPanel(d)
       + '<div class="earn-note">'+escapeHtml(riskEdgeNote(borrowEdge,'借贷'))+'</div>'
       + '<div class="flag-row">'
       + flagSwitchHtml('lottery.auto_checkin','签到', flagValue(flags,'lottery.auto_checkin',true), 'low')
@@ -4383,7 +4521,7 @@ async function refresh(manual=false){
     if (typeof setTiltScrollLock === 'function') setTiltScrollLock(true);
     const r = await fetch('/api/overview', {credentials:'same-origin'});
     if(r.status===401){ lockPanel('登录已失效，请重新登录'); return; }
-    const d = await r.json();
+    const d = await r.json(); window.__lastOverview = d;
     if(d.error) throw new Error(d.error);
     const acc=d.account||{}, idx=d.index||{}, svc=d.service||{};
     const control=(d.control||svc.control||{}).trade_mode||'auto';

@@ -104,6 +104,12 @@ func (s *Server) Overview() map[string]any {
 		"borrow":      asMap(sanitize(s.st.GetStateMap("risk.edge.borrow"))),
 		"derivatives": asMap(sanitize(s.st.GetStateMap("risk.edge.derivatives"))),
 		"underwrite":  asMap(sanitize(s.st.GetStateMap("risk.edge.underwrite"))),
+		"vip_obs":      asMap(sanitize(s.st.GetStateMap("risk.edge.vip_obs"))),
+		"free_draw":    asMap(sanitize(s.st.GetStateMap("risk.obs.free_draw"))),
+		"free_draw_premium": asMap(sanitize(s.st.GetStateMap("risk.obs.free_draw_premium"))),
+		"farm_harvest": asMap(sanitize(s.st.GetStateMap("risk.obs.farm_harvest"))),
+		"farm_steal":   asMap(sanitize(s.st.GetStateMap("risk.obs.farm_steal"))),
+		"side_hustle":  asMap(sanitize(s.st.GetStateMap("risk.obs.side_hustle"))),
 	}
 
 	authOK := true
@@ -143,6 +149,10 @@ func (s *Server) Overview() map[string]any {
 		"funds":          s.fundsBreakdown(account),
 		"auth_keepalive": ka,
 		"risk_edges":     riskEdges,
+		"manual_activity": map[string]any{
+			"vip":  asMap(sanitize(s.st.GetStateMap("manual.vip"))),
+			"feed": asMap(sanitize(s.st.GetStateMap("manual.activity"))),
+		},
 		"llm_usage":      asMap(sanitize(s.st.GetStateMap("llm_usage"))),
 		"notes":          []string{"go-dashboard"},
 	}
@@ -421,6 +431,63 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/auth/cookies/probe", s.handleCookieProbe)
 	mux.HandleFunc("/api/auth/cookies/clear", s.handleCookieClear)
 	mux.HandleFunc("/api/auth/cookies", s.handleCookieList)
+	mux.HandleFunc("/api/vip/room-pref", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			pref := s.st.GetStateMap("vip.room_pref")
+			if len(pref) == 0 {
+				pref = map[string]any{"room_id": nil, "mode": "auto"}
+			}
+			writeJSON(w, 200, map[string]any{"ok": true, "pref": pref})
+			return
+		}
+		if r.Method == http.MethodPost {
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			clear := false
+			switch t := payload["clear"].(type) {
+			case bool:
+				clear = t
+			case string:
+				clear = t == "1" || strings.EqualFold(t, "true")
+			}
+			if clear {
+				data := map[string]any{"room_id": nil, "mode": "auto", "updated_at": float64(time.Now().UnixNano()) / 1e9}
+				if err := s.st.SetState("vip.room_pref", data); err != nil {
+					writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+					return
+				}
+				writeJSON(w, 200, map[string]any{"ok": true, "pref": data})
+				return
+			}
+			rid := strings.TrimSpace(fmt.Sprint(payload["room_id"]))
+			if rid == "" || rid == "<nil>" || rid == "null" {
+				writeJSON(w, 400, map[string]any{"ok": false, "error": "room_id required (or clear=true)"})
+				return
+			}
+			mode := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["mode"])))
+			if mode == "" || mode == "<nil>" {
+				mode = "preferred"
+			}
+			if mode != "preferred" && mode != "spectator" && mode != "auto" {
+				mode = "preferred"
+			}
+			data := map[string]any{
+				"room_id":    rid,
+				"mode":       mode,
+				"updated_at": float64(time.Now().UnixNano()) / 1e9,
+			}
+			if name := strings.TrimSpace(fmt.Sprint(payload["name"])); name != "" && name != "<nil>" {
+				data["name"] = name
+			}
+			if err := s.st.SetState("vip.room_pref", data); err != nil {
+				writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
+				return
+			}
+			writeJSON(w, 200, map[string]any{"ok": true, "pref": data})
+			return
+		}
+		writeJSON(w, 405, map[string]any{"error": "method not allowed"})
+	})
 	mux.HandleFunc("/api/feature-flags", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			writeJSON(w, 200, flags.Get(s.cfg, s.st))
