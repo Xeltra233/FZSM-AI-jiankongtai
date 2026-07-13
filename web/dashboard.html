@@ -1209,6 +1209,27 @@
     .risk-edge-toggle{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 8px}
     .risk-edge-toggle .flag-sw{margin:0}
     .risk-edge-wrap[hidden]{display:none !important}
+    .risk-edge-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+    .risk-edge-actions button,.risk-edge-toolbar button{
+      border:1px solid rgba(210,230,255,.16);
+      background:rgba(255,255,255,.04);
+      color:var(--text);
+      border-radius:999px;
+      padding:4px 10px;
+      font-size:11px;
+      font-weight:700;
+      cursor:pointer;
+    }
+    .risk-edge-actions button:hover,.risk-edge-toolbar button:hover{
+      border-color:rgba(126,182,255,.4);
+      background:rgba(126,182,255,.12);
+    }
+    .risk-edge-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px}
+    .flag-sw.flash-target,.risk-edge-item.flash-target,[data-earn].flash-target,[data-flag].flash-target{
+      outline:2px solid rgba(126,182,255,.85);
+      box-shadow:0 0 0 4px rgba(126,182,255,.18);
+      transition:outline .2s ease, box-shadow .2s ease;
+    }
 
 </style>
 </head>
@@ -1451,6 +1472,10 @@
               </label>
             </div>
             <div class="risk-edge-wrap" id="riskEdgeWrap">
+              <div class="risk-edge-toolbar" id="riskEdgeToolbar">
+                <button type="button" onclick="exportRiskEdgeSamples()">导出全部样本</button>
+                <button type="button" onclick="exportRiskEdgeSamples(null,true)">仅导出有历史</button>
+              </div>
               <div class="risk-edge-filters" id="riskEdgeFilters">
                 <button type="button" data-risk-filter="all" class="on" onclick="setRiskEdgeFilter('all')">全部</button>
                 <button type="button" data-risk-filter="blocked" onclick="setRiskEdgeFilter('blocked')">仅拦截</button>
@@ -1458,7 +1483,7 @@
                 <button type="button" data-risk-filter="collecting" onclick="setRiskEdgeFilter('collecting')">收集中</button>
               </div>
               <div class="risk-edge-panel" id="riskEdgePanel"><span class="note">加载中...</span></div>
-              <div class="farm-note" id="riskEdgeHint">理论/观察 RTP·EV 与最近样本；点击卡片看样本详情</div>
+              <div class="farm-note" id="riskEdgeHint">理论/观察 RTP·EV 与最近样本；点击卡片看详情，可定位模块开关并导出样本（不含登录凭证或密钥）</div>
             </div>
           </div>
           <div class="card">
@@ -2155,12 +2180,30 @@ async function applyControl(mode){
       go_no_paid_high_variance_without_edge:'高波动付费玩法未证明优势，暂不自动执行',
       paid_high_variance_no_edge:'高波动付费玩法未证明优势，暂不自动执行',
       needs_active_vip_round_context:'VIP下注需房间/回合上下文，当前仅分析',
+      vip_no_room:'VIP无房间，尚未加入',
+      vip_missing_round:'VIP有房间但缺活跃回合',
+      vip_bet_path_missing:'VIP下注路径上下文不足',
+      vip_join_path_missing:'VIP进房路径上下文不足',
+      vip_write_paths_missing:'VIP公开写路径未找到，仅分析',
+
+      vip_my_room_loaded:'VIP我的房间已加载',
+      vip_stats_loaded:'VIP统计已加载',
+      vip_history_loaded:'VIP历史已加载',
+      vip_context_probed:'VIP上下文已探测',
+      vip_manual_observed:'已记录网页手动VIP活动',
+      vip_manual_watch:'监视网页手动VIP活动',
+      vip_observe_samples:'观战样本已收集',
+      vip_observe_watch:'观战样本监视中',
+      waiting_round_outcomes:'等待回合结果',
+      vip_no_suitable_room:'VIP无可自动加入房间',
+      vip_join:'VIP进房',
+      waiting_user_web_activity:'等待网页手动操作',
       insufficient_balance_for_yolo:'余额不足，无法搏一搏',
       zero_rate_source_missing:'有零息但缺少可借来源ID',
       go_no_vip_join_without_balance_gate_port:'VIP自动进房未满足余额门控',
       vip_balance_or_gate_not_met:'VIP余额/门控未满足',
       vip_enter_ok_but_auto_join_disabled:'VIP可进但自动进房未启用',
-      loan_root_unavailable_use_offers:'借贷根路径不可用，改用借贷挂单',
+      loan_root_unavailable_use_offers:'借贷挂单已切换到 /loan/offers',
       loan_offers_loaded:'借贷挂单已加载',
       slot_config_loaded:'老虎机配置已加载',
       slot_edge_analyzed:'老虎机门槛已分析',
@@ -2646,10 +2689,36 @@ async function applyControl(mode){
     if(edge.message) return name+'·'+probeTxt+' · '+edge.message+' · 理论RTP '+tRtp+' / EV '+tEv+' · 观察 '+oRtp+' · 样本 '+sampleTxt;
     return name+'·'+probeTxt+' · 理论RTP '+tRtp+' / EV '+tEv+' · 观察 '+oRtp+' · 样本 '+sampleTxt;
   }
+  function vipObserveNote(d, lotA, lot){
+    const obs = (lotA && lotA.vip_observe) || (lot && lot.vip_observe) || ((d && d.risk_edges && d.risk_edges.vip_obs) || {});
+    if(obs.enabled===false) return '观战收样 · 已关闭';
+    const n = Number(obs.samples||0), neu=Number(obs.new_samples||0);
+    const msg = obs.message || '';
+    return '观战收样 · 样本 '+n+(neu?(' · 本轮+'+neu):'')+(msg?(' · '+msg):'');
+  }
+  function vipManualNote(d, lotA, lot){
+    const man = (lotA && lotA.vip_manual) || (lot && lot.vip_manual) || ((d && d.manual_activity && d.manual_activity.vip) || {});
+    const n = Number(man.event_count||0);
+    const latest = man.latest || {};
+    if(!n){
+      return '网页手动VIP · 暂无新记录（你在官网进房/对局后，这里会自动记本地）';
+    }
+    const title = latest.title || '已记录手动活动';
+    const detail = latest.detail || '';
+    const when = latest.ts ? new Date(Number(latest.ts)*1000).toLocaleString() : '';
+    return '网页手动VIP · '+n+'条 · 最近：'+title+(detail?(' · '+detail):'')+(when?(' · '+when):'');
+  }
   function riskEdgeChip(edge, label){
     if(!edge || typeof edge!=='object') return '<span class="earn-chip">'+(label||'高风险')+' · -</span>';
     const cls = edge.edge_ok ? 'ok' : ((edge.gate==='theory_negative' || edge.probe_status==='blocked') ? 'warn' : 'warn');
-    const st = edge.probe_status || edge.gate || '-';
+    let st = edge.context_label || edge.probe_status || edge.gate || '-';
+    const gateMap = {
+      theory_negative:'理论拦截', no_positive_edge:'样本收集中', ready:'可自动', bypassed:'门控关闭',
+      vip_gate_not_met:'无房间/不可进', vip_no_room:'无房间', vip_missing_round:'缺回合',
+      vip_bet_path_missing:'无下注路径', trade_disabled:'实盘关闭', blocked:'拦截', collecting:'收集中'
+    };
+    if(gateMap[st]) st = gateMap[st];
+    if(gateMap[edge.gate] && !edge.context_label) st = gateMap[edge.gate];
     const tRtp = fmtSlotRtp(edge.theory_rtp);
     return '<span class="earn-chip '+cls+'">'+escapeHtml(String(label||'高风险'))+' · '+escapeHtml(String(st))+' · 理论 '+escapeHtml(tRtp)+'</span>';
   }
@@ -2858,6 +2927,8 @@ function renderFeatureFlagPanel(d){
       + '<div class="earn-note">'+escapeHtml(slotEdgeNote(lotEdge))+'</div>'
       + '<div class="earn-note">'+escapeHtml(riskEdgeNote(yoloEdge,'搏一搏'))+'</div>'
       + '<div class="earn-note">'+escapeHtml(riskEdgeNote(vipBetEdge,'VIP下注'))+'</div>'
+      + '<div class="earn-note">VIP上下文 · '+escapeHtml(String((lotA.vip_context||lot.vip_context||vipBetEdge).context_label||'-')) + ' · ' + escapeHtml(String((lotA.vip_context||lot.vip_context||vipBetEdge).context_summary||vipBetEdge.message||'仅只读探测，不自动下注'))+'</div>'
+      + '<div class="earn-note">VIP执行 · 写路径已确认（/rooms/{id}/join, /rounds/{id}/bet）；正式入座需余额门槛</div>'
       + '<div class="earn-note">'+escapeHtml(riskEdgeNote(borrowEdge,'借贷'))+'</div>'
       + '<div class="flag-row">'
       + flagSwitchHtml('lottery.auto_checkin','签到', flagValue(flags,'lottery.auto_checkin',true), 'low')
@@ -2868,6 +2939,7 @@ function renderFeatureFlagPanel(d){
       + flagSwitchHtml('lottery.auto_slot','老虎机', flagValue(flags,'lottery.auto_slot',false), 'high')
       + flagSwitchHtml('lottery.auto_vip','进VIP', flagValue(flags,'lottery.auto_vip',false), 'high')
       + flagSwitchHtml('lottery.auto_vip_bet','VIP下注', flagValue(flags,'lottery.auto_vip_bet',false), 'high')
+      + flagSwitchHtml('lottery.auto_vip_observe','观战收样', flagValue(flags,'lottery.auto_vip_observe',true), 'low')
       + flagSwitchHtml('lottery.auto_borrow_zero_rate','借零息', flagValue(flags,'lottery.auto_borrow_zero_rate',false), 'mid')
       + flagSwitchHtml('lottery.auto_deposit','存款', flagValue(flags,'lottery.auto_deposit',false), 'mid')
       + flagSwitchHtml('lottery.auto_bankruptcy','破产保护', flagValue(flags,'lottery.auto_bankruptcy',false), 'high')
@@ -3503,6 +3575,150 @@ cards.push(
     if(edge.probe_status==='blocked' || edge.gate==='theory_negative') return 'bad';
     return 'warn';
   }
+
+  const RISK_EDGE_FLAG_MAP = {
+    slot: {flag:'lottery.auto_slot', label:'老虎机', earn:'lottery', tab:'earn'},
+    yolo: {flag:'lottery.auto_yolo', label:'搏一搏', earn:'lottery', tab:'earn'},
+    vip_bet: {flag:'lottery.auto_vip_bet', label:'VIP下注', earn:'lottery', tab:'earn'},
+    vip_obs: {flag:'lottery.auto_vip_observe', label:'观战收样', earn:'lottery', tab:'earn'},
+    borrow: {flag:'lottery.auto_borrow_zero_rate', label:'借零息', earn:'lottery', tab:'earn'},
+    derivatives: {flag:'derivatives.trade_enabled', label:'期货实盘', earn:'derivatives', tab:'earn'},
+    underwrite: {flag:'brokers.auto_underwrite', label:'自动承销', earn:'brokers', tab:'earn'},
+    free_draw: {flag:'lottery.auto_draw_free', label:'免费抽', earn:'lottery', tab:'earn'},
+    free_draw_premium: {flag:'lottery.auto_draw_premium_free', label:'高级免费抽', earn:'lottery', tab:'earn'},
+    farm_harvest: {flag:'farm.auto_harvest', label:'农场收获', earn:'farm', tab:'earn'},
+    farm_steal: {flag:'farm.auto_steal', label:'农场偷菜', earn:'farm', tab:'earn'},
+    side_hustle: {flag:'side_hustle.auto', label:'侧线', earn:'side', tab:'earn'}
+  };
+
+  function riskEdgeMeta(id){
+    return RISK_EDGE_FLAG_MAP[id] || {flag:'', label:String(id||'模块'), earn:'', tab:'earn'};
+  }
+
+  function sanitizeRiskEdgeExport(edge){
+    const src = (edge && typeof edge === 'object') ? edge : {};
+    const out = {};
+    const ban = /(cookie|token|password|secret|authorization|set-cookie|jwt|session)/i;
+    Object.keys(src).forEach(k => {
+      if(ban.test(k)) return;
+      const v = src[k];
+      if(v == null) { out[k] = v; return; }
+      if(typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'){ out[k]=v; return; }
+      if(Array.isArray(v)){
+        out[k] = v.map(row => {
+          if(!row || typeof row !== 'object') return row;
+          const r = {};
+          Object.keys(row).forEach(kk => { if(!ban.test(kk)) r[kk]=row[kk]; });
+          return r;
+        });
+        return;
+      }
+      if(typeof v === 'object'){
+        // shallow copy only safe primitives / nested shallow
+        const r = {};
+        Object.keys(v).forEach(kk => {
+          if(ban.test(kk)) return;
+          const vv = v[kk];
+          if(vv==null || typeof vv==='string' || typeof vv==='number' || typeof vv==='boolean') r[kk]=vv;
+          else if(Array.isArray(vv)) r[kk]=vv.slice(0,50);
+          else r[kk]=String(vv);
+        });
+        out[k]=r;
+      }
+    });
+    return out;
+  }
+
+  function downloadJsonFile(filename, obj){
+    const blob = new Blob([JSON.stringify(obj, null, 2)], {type:'application/json;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename || 'risk-edge-export.json';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); a.remove(); }catch(e){} }, 300);
+  }
+
+  function exportRiskEdgeSamples(id, onlyWithHistory){
+    const payload = lastRiskEdgesPayload || {};
+    const edges = (payload.risk_edges) || {};
+    const now = new Date();
+    const stamp = now.toISOString().replace(/[:.]/g,'-');
+    const pack = {
+      exported_at: now.toISOString(),
+      source: 'fzsm-dashboard',
+      note: '本地样本导出，不含登录凭证或密钥',
+      filter: onlyWithHistory ? 'only_with_history' : (id ? ('single:'+id) : 'all'),
+      items: []
+    };
+    const ids = id ? [id] : Object.keys(riskEdgeCache || {}).concat(Object.keys(edges));
+    const seen = {};
+    ids.forEach(rid => {
+      if(!rid || seen[rid]) return;
+      seen[rid]=true;
+      const cached = (riskEdgeCache && riskEdgeCache[rid]) || {};
+      const edge = (cached.edge && Object.keys(cached.edge).length) ? cached.edge : (edges[rid] || {});
+      const hist = Array.isArray(edge.history) ? edge.history : [];
+      if(onlyWithHistory && !hist.length && !(Number(edge.samples||0)>0)) return;
+      const meta = riskEdgeMeta(rid);
+      pack.items.push({
+        id: rid,
+        label: cached.label || meta.label || rid,
+        module_flag: meta.flag || '',
+        edge: sanitizeRiskEdgeExport(edge),
+        history: hist.map(row => sanitizeRiskEdgeExport(row))
+      });
+    });
+    if(!pack.items.length){
+      try{ toast('没有可导出的样本', 'warn', '样本导出'); }catch(e){}
+      return;
+    }
+    // strip secrets again at top level
+    const safe = sanitizeRiskEdgeExport(pack);
+    // restore structured items
+    safe.items = pack.items;
+    const fname = id ? ('risk-edge-'+id+'-'+stamp+'.json') : ('risk-edges-'+stamp+'.json');
+    downloadJsonFile(fname, safe);
+    try{ toast('已导出 '+pack.items.length+' 项样本', 'ok', '样本导出'); }catch(e){}
+  }
+
+  function flashTarget(el){
+    if(!el) return;
+    el.classList.add('flash-target');
+    try{ el.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){ try{ el.scrollIntoView(true); }catch(_){} }
+    setTimeout(()=>{ try{ el.classList.remove('flash-target'); }catch(e){} }, 1800);
+  }
+
+  function locateRiskEdgeFlag(id, opts={}){
+    const meta = riskEdgeMeta(id);
+    const flagId = meta.flag || '';
+    const tab = opts.tab || meta.tab || 'earn';
+    try{ switchTab(tab, {silent:true}); }catch(e){}
+    setTimeout(() => {
+      let target = null;
+      if(flagId){
+        target = document.querySelector('[data-flag="'+flagId.replace(/"/g,'')+'"]');
+      }
+      if(!target && meta.earn){
+        target = document.querySelector('[data-earn="'+String(meta.earn).replace(/"/g,'')+'"]');
+      }
+      if(!target){
+        // fallback control page feature flags
+        try{ switchTab('control', {silent:true}); }catch(e){}
+        setTimeout(() => {
+          let t2 = flagId ? document.querySelector('[data-flag="'+flagId.replace(/"/g,'')+'"]') : null;
+          if(!t2) t2 = document.getElementById('riskEdgePanel');
+          flashTarget(t2);
+          try{ toast((meta.label||id)+' 开关已定位'+(flagId?('：'+flagId):''), t2?'ok':'warn', '定位模块开关'); }catch(e){}
+        }, 80);
+        return;
+      }
+      flashTarget(target);
+      try{ toast((meta.label||id)+' 开关已定位'+(flagId?('：'+flagId):''), 'ok', '定位模块开关'); }catch(e){}
+    }, 60);
+  }
+
   function riskHistoryHtml(edge){
     const hist = Array.isArray(edge && edge.history) ? edge.history : [];
     if(!hist.length) return '<div class="risk-edge-hist"><span class="h">暂无样本历史</span></div>';
@@ -3564,7 +3780,7 @@ cards.push(
 
     if(!visible.length){
       setHtmlIfChanged(box, '<span class="note">当前筛选下无项目</span>');
-      setTextIfChanged('riskEdgeHint', '筛选=' + filt + ' · 可自动 '+readyN+' · 拦截 '+blockN+' · 收集/分析 '+collectN+' · 点击卡片看样本详情');
+      setTextIfChanged('riskEdgeHint', '筛选=' + filt + ' · 可自动 '+readyN+' · 拦截 '+blockN+' · 收集/分析 '+collectN+' · 点击卡片看详情/导出样本');
       return;
     }
 
@@ -3594,10 +3810,14 @@ cards.push(
         + '</div>'
         + riskHistoryHtml(e)
         + '<div class="risk-edge-msg">'+escapeHtml(String(msg))+'</div>'
+        + '<div class="risk-edge-actions" onclick="event.stopPropagation()">'
+        + '<button type="button" onclick="event.stopPropagation();locateRiskEdgeFlag(\''+String(it.id).replace(/'/g,'')+'\')">定位模块开关</button>'
+        + '<button type="button" onclick="event.stopPropagation();exportRiskEdgeSamples(\''+String(it.id).replace(/'/g,'')+'\')">导出样本</button>'
+        + '</div>'
         + '</div>';
     }).join('');
     setHtmlIfChanged(box, html);
-    setTextIfChanged('riskEdgeHint', '筛选=' + filt + ' · 可自动 '+readyN+' · 拦截 '+blockN+' · 收集/分析 '+collectN+' · 点击卡片看样本详情');
+    setTextIfChanged('riskEdgeHint', '筛选=' + filt + ' · 可自动 '+readyN+' · 拦截 '+blockN+' · 收集/分析 '+collectN+' · 点击卡片看详情/导出样本');
   }
 
   
@@ -3692,6 +3912,10 @@ cards.push(
           + '</div>';
       }).join('') + '</div>';
     }
+    const meta = riskEdgeMeta(id);
+    const flags = (lastRiskEdgesPayload && lastRiskEdgesPayload.feature_flags) || {};
+    const flagOn = meta.flag ? flagValue(flags, meta.flag, false) : false;
+    const flagHtml = meta.flag ? ('<div class="flag-row" style="margin-top:8px">'+flagSwitchHtml(meta.flag, meta.label || it.label || id, flagOn, 'high')+'</div>') : '<div class="note" style="margin-top:8px">暂无对应模块开关映射</div>';
     const body = ''
       + '<div class="risk-edge-meta" style="margin-top:8px">'
       + '<div><div class="k">状态</div><div class="v">'+escapeHtml(st)+'</div></div>'
@@ -3704,11 +3928,62 @@ cards.push(
       + '<div><div class="k">观察EV</div><div class="v">'+escapeHtml(oEv)+'</div></div>'
       + '</div>'
       + '<div class="risk-edge-msg" style="margin-top:8px">'+escapeHtml(String(e.message||e.note||'-'))+'</div>'
-      + '<div class="farm-note" style="margin-top:10px">最近样本历史（Δ）</div>'
+      + '<div class="farm-note" style="margin-top:10px">模块开关</div>'
+      + flagHtml
+      + '<div class="risk-edge-actions" style="margin-top:8px">'
+      + '<button type="button" onclick="locateRiskEdgeFlag(\''+String(id).replace(/'/g,'')+'\')">定位模块开关</button>'
+      + '<button type="button" onclick="exportRiskEdgeSamples(\''+String(id).replace(/'/g,'')+'\')">导出本项样本</button>'
+      + '<button type="button" onclick="exportRiskEdgeSamples()">导出全部样本</button>'
+      + '</div>'
+      + '<div class="farm-note" style="margin-top:10px">最近样本历史（Δ）· 本地导出不含登录凭证或密钥</div>'
       + histHtml;
     openDetailModal(it.label + ' · 样本详情', '方案B门槛与最近自动样本', body);
   }
 
+
+
+  function renderAuthKeepalive(d){
+    const el = document.getElementById('authKeepaliveBox');
+    if(!el) return;
+    const ka = (d && d.auth_keepalive) || {};
+    if(ka.enabled === false){
+      el.innerHTML = '<span class="note">保活已关闭</span>';
+      return;
+    }
+    if(!ka || (!ka.ts && ka.ok==null)){
+      el.innerHTML = '<span class="note">暂无保活记录（bot 下一轮写入）</span>';
+      return;
+    }
+    const ok = !!ka.ok;
+    const degraded = !!ka.degraded;
+    const stocks = ka.stocks || {};
+    const lottery = ka.lottery || {};
+    const tsTxt = ka.ts ? new Date(Number(ka.ts)*1000).toLocaleString() : '-';
+    let badge = '失效';
+    let cls = 'bad';
+    if(ok && degraded){ badge = '部分有效'; cls = 'warn'; }
+    else if(ok){ badge = '正常'; cls = 'ok'; }
+    let html = '';
+    html += '<span class="earn-chip '+cls+'">状态 · '+badge+'</span>';
+    html += '<span class="earn-chip">时间 · '+escapeHtml(String(tsTxt))+'</span>';
+    html += '<span class="earn-chip '+(stocks.ok?'ok':'bad')+'">股市 · '+(stocks.ok?'已登录':'失效')+(stocks.latency_ms!=null?(' '+stocks.latency_ms+'ms'):'')+'</span>';
+    if(lottery.skipped){
+      html += '<span class="earn-chip">抽奖 · 未探测</span>';
+    }else{
+      html += '<span class="earn-chip '+(lottery.ok?'ok':'bad')+'">抽奖 · '+(lottery.ok?'已登录':'失效')+(lottery.latency_ms!=null?(' '+lottery.latency_ms+'ms'):'')+'</span>';
+    }
+    if(ka.message){
+      html += '<div class="farm-note" style="margin-top:8px;width:100%">'+escapeHtml(String(ka.message))+'</div>';
+    }
+    if(ka.manual_reauth_hint){
+      const tip = ok ? '续登提示：' : '手动续登：';
+      html += '<div class="farm-note" style="margin-top:4px;width:100%">'+tip+escapeHtml(String(ka.manual_reauth_hint))+'</div>';
+    }
+    if(ka.cookie_write && ka.cookie_write.rewrote){
+      html += '<div class="farm-note" style="margin-top:4px;width:100%">已回写 cookie '+escapeHtml(String(ka.cookie_write.count||0))+' 条</div>';
+    }
+    el.innerHTML = html;
+  }
 
   function cookieAdminHeaders(){
     return {'Content-Type':'application/json'};
