@@ -3939,6 +3939,7 @@ cards.push(
     const meta = riskEdgeMeta(id);
     const flagId = meta.flag || '';
     const tab = opts.tab || meta.tab || 'earn';
+    try{ closeDetailModal(); }catch(e){}
     try{ switchTab(tab, {silent:true}); }catch(e){}
     setTimeout(() => {
       let target = null;
@@ -4119,6 +4120,10 @@ cards.push(
   function closeDetailModal(){
     const mask = document.getElementById('detailMask');
     if(mask) mask.classList.remove('show');
+    try{
+      // prevent stuck focus/overlay after tab switch from inside modal
+      if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    }catch(e){}
   }
   function showRiskEdgeDetail(id){
     if(!riskEdgeDetailEnabled){
@@ -4846,6 +4851,17 @@ document.getElementById('tabs').addEventListener('click', (e)=>{
   switchTab(btn.dataset.tab);
 });
 
+document.getElementById('detailClose')?.addEventListener('click', (e)=>{
+  e.preventDefault();
+  e.stopPropagation();
+  closeDetailModal();
+});
+document.getElementById('detailMask')?.addEventListener('click', (e)=>{
+  // click outside modal content closes detail
+  if(e.target && e.target.id === 'detailMask'){
+    closeDetailModal();
+  }
+});
 document.getElementById('modalCancel').addEventListener('click', closeModal);
 document.getElementById('modalOk').addEventListener('click', confirmModal);
 document.getElementById('modalMask').addEventListener('click', (e)=>{
