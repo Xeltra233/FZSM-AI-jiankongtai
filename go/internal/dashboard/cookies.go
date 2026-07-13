@@ -643,7 +643,7 @@ func (s *Server) handleCookieImport(w http.ResponseWriter, r *http.Request) {
 		c, err := s.newCookieClient()
 		if err != nil {
 			resp["probe"] = map[string]any{"ok": false, "error": err.Error()}
-			resp["message"] = msg + "??????????"
+			resp["message"] = msg + "；探测客户端创建失败"
 		} else {
 			probe := probeCookieAuth(c)
 			resp["probe"] = probe
@@ -656,20 +656,20 @@ func (s *Server) handleCookieImport(w http.ResponseWriter, r *http.Request) {
 				lotteryOK = asBoolAny(m["ok"])
 			}
 			if asBoolAny(probe["ok"]) {
-				resp["message"] = msg + "????????+???"
+				resp["message"] = msg + "；探测通过（股市+抽奖）"
 			} else if stocksOK || lotteryOK {
-				side := "??"
+				side := "股市"
 				if lotteryOK && !stocksOK {
-					side = "??"
+					side = "抽奖"
 				} else if stocksOK && !lotteryOK {
-					side = "??"
+					side = "股市"
 				} else {
-					side = "??"
+					side = "部分"
 				}
-				resp["message"] = msg + "??????" + side + "????????????????????"
+				resp["message"] = msg + "；部分有效（" + side + "可用）。通常仍可继续跑，失败侧可稍后重导"
 				resp["partial"] = true
 			} else {
-				resp["message"] = msg + "??????????????? fz_lottery ??"
+				resp["message"] = msg + "；探测失败，请确认复制的是完整 fz_lottery 原值"
 			}
 		}
 	}
