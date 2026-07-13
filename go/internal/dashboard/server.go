@@ -13,6 +13,7 @@ import (
 	"fzsmbot/internal/config"
 	"fzsmbot/internal/flags"
 	"fzsmbot/internal/storage"
+	"fzsmbot/internal/trader"
 )
 
 type Server struct {
@@ -131,6 +132,7 @@ func (s *Server) Overview() map[string]any {
 		"top_signals":   asSlice(last["top_signals"]),
 		"recent_trades": sanitize(s.st.RecentTrades(30)),
 		"trade_stats":   s.st.TradeStats(),
+		"bankruptcy_cooldown": trader.BankruptcyStatus(s.st),
 		"service":       service,
 		"control":       control,
 		"feature_flags": sanitize(flags.Get(s.cfg, s.st)),

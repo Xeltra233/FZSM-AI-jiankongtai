@@ -427,6 +427,18 @@ func (t *Trader) executePaper(sig strategy.Signal, prices map[int]float64, trade
 }
 
 func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldShares float64, tradeMode string) []map[string]any {
+        // Hard gate: do not place live buy/sell until platform bankruptcy cooldown ends.
+        if blocked, msg, until := t.BankruptcyBlocked(); blocked {
+        	return []map[string]any{{
+        		"status":   "skip",
+        		"reason":   msg,
+        		"stock_id": sig.StockID,
+        		"code":     sig.Code,
+        		"side":     sig.Action,
+        		"gate":     "bankruptcy_cooldown",
+        		"until":    until.Format(time.RFC3339),
+        	}}
+        }
         acc := t.AccountSnapshot(prices)
         positions, _ := acc["positions"].([]any)
         cash := asF(acc["cash"])
@@ -593,6 +605,10 @@ func (t *Trader) liveBuy(sig strategy.Signal, shares int, reason string) map[str
                 trade["status"] = "error"
                 trade["reason"] = err.Error()
                 trade["raw"] = raw
+                t.rememberBankruptcyData(err.Error())
+                if raw != nil {
+                	t.rememberBankruptcyData(raw)
+                }
         } else {
                 if v := asF(raw["avg_price"]); v > 0 {
                         trade["price"] = v
@@ -620,6 +636,10 @@ func (t *Trader) liveSell(sig strategy.Signal, shares int, reason string) map[st
                 trade["status"] = "error"
                 trade["reason"] = err.Error()
                 trade["raw"] = raw
+                t.rememberBankruptcyData(err.Error())
+                if raw != nil {
+                	t.rememberBankruptcyData(raw)
+                }
         } else {
                 if v := asF(raw["avg_price"]); v > 0 {
                         trade["price"] = v

@@ -4594,6 +4594,20 @@ async function refresh(manual=false){
     if(ic) setClassIfChanged(ic, 'sub '+clsPnl(idx.change_pct));
     const st=d.trade_stats||{};
     setTextIfChanged('tradeStats', `${st.ok_count??st.ok??0} / ${st.err_count??st.failed??st.error??0}`);
+    const bc = d.bankruptcy_cooldown || {};
+    const bcActive = !!bc.active;
+    const bcMsg = bcActive ? (bc.message || ('破产冷却中，约 ' + Math.max(0, Math.ceil((Number(bc.remain_sec||0))/60)) + ' 分钟后恢复')) : '';
+    if (bcActive) {
+      setTextIfChanged('tradeStats', `${st.ok_count??st.ok??0} / ${st.err_count??st.failed??st.error??0} · 冷却中`);
+      if (typeof toast === 'function' && !window.__bankruptcyToastShown) {
+        window.__bankruptcyToastShown = true;
+        try { toast(bcMsg, 'warn', '破产冷却'); } catch(e) {}
+      }
+    } else {
+      window.__bankruptcyToastShown = false;
+    }
+    window.__bankruptcyCooldown = bc;
+
     setTextIfChanged('authInfo', d.auth_ok?'已登录':'未登录');
     setTextIfChanged('userName', d.user_name||'账户');
     setTextIfChanged('cycleInfo', `${(acc.positions||[]).length}仓 · #${svc.cycle||'-'}`);
@@ -4603,6 +4617,10 @@ async function refresh(manual=false){
     setPill(document.getElementById('modePill'), String(modeName).toUpperCase(), modeName==='live'?'live':'paper');
     const CONTROL_TEXT={auto:'自动', sell_only:'只卖', paused:'暂停'};
     setPill(document.getElementById('controlPill'), CONTROL_TEXT[control]||control, control);
+    if (window.__bankruptcyCooldown && window.__bankruptcyCooldown.active) {
+      setPill(document.getElementById('controlPill'), (CONTROL_TEXT[control]||control) + ' · 冷却', 'warn');
+    }
+
     const regimeName=(d.regime&&d.regime.name)||svc.regime||'neutral';
     const REGIME_TEXT={neutral:'中性',risk_on:'进攻',risk_off:'防守',crash:'危机'};
     setPill(document.getElementById('regimePill'), REGIME_TEXT[regimeName]||regimeName, regimeName==='crash'?'err':(regimeName==='risk_off'?'warn':(regimeName==='risk_on'?'run':'')));
