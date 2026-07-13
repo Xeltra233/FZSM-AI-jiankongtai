@@ -212,12 +212,19 @@ func evaluateBorrowEdge(st *storage.Storage, lcfg map[string]any, loanOffers map
 	offers := asSlice(firstNonNil(loanOffers["offers"], loanOffers["data"], loanOffers["items"], loanOffers["list"]))
 	bestRate := 1e9
 	zeroN := 0
+	var bestZeroSource any
+	var bestZeroAmount float64
 	for _, it := range offers {
 		m := asMap(it)
 		rate := asFloat(firstNonNil(m["daily_rate"], m["rate"], m["interest_rate"]))
+		src := firstNonNil(m["source"], m["id"], m["offer_id"], m["lender_id"], m["uid"])
+		maxBorrow := asFloat(firstNonNil(m["max_borrow"], m["amount"], m["available"], m["remain"]))
 		if rate == 0 {
-			// maybe percent style 0.0
 			zeroN++
+			if bestZeroSource == nil {
+				bestZeroSource = src
+				bestZeroAmount = maxBorrow
+			}
 		}
 		if rate < bestRate {
 			bestRate = rate
@@ -244,11 +251,13 @@ func evaluateBorrowEdge(st *storage.Storage, lcfg map[string]any, loanOffers map
 	edge := buildRiskEdge("borrow", theoryOK, theoryRTP, theoryEV, minRTP, minEV,
 		int(asFloat(prev["samples"])), asFloat(prev["sum_delta"]), int(asFloat(prev["wins"])),
 		map[string]any{
-			"offers":      len(offers),
-			"zero_offers": zeroN,
-			"best_rate":   bestRate,
-			"min_samples": riskNum(lcfg, "borrow_min_samples", 1),
-			"note":        "仅零息挂单视为非负成本；有息默认拦截",
+			"offers":           len(offers),
+			"zero_offers":      zeroN,
+			"best_rate":        bestRate,
+			"best_zero_source": bestZeroSource,
+			"best_zero_amount": bestZeroAmount,
+			"min_samples":      riskNum(lcfg, "borrow_min_samples", 1),
+			"note":             "仅零息挂单视为非负成本；有息默认拦截",
 		},
 	)
 	if !theoryOK {
