@@ -2119,6 +2119,11 @@ async function applyControl(mode){
       vip_title_track:'VIP称号路径', auto_claim:'自动领取',
       no_active_meeting_for_holdings:'持仓无活跃大会', empty:'空列表',
       auto_initiate_or_accept:'自动发起/接受', admin_probe:'后台探针',
+
+      underwrite:'承销', underwrite_edge:'承销门槛', margin_order:'保证金下单', borrow:'借贷',
+      vip_bet:'VIP下注', vip_context_probed:'VIP上下文已探测', vip_history_loaded:'VIP历史已加载',
+      vip_manual_watch:'监视网页手动VIP', vip_my_room_loaded:'VIP我的房间已加载', vip_stats_loaded:'VIP统计已加载',
+      scan_cached:'扫描缓存', broker_like:'点赞券商', underwriter_list:'承销列表',
       admin_write_ops:'后台写操作', crop:'作物', plant:'种植', harvest:'收获',
       steal:'偷菜', scan:'扫描', probe:'探针', open:'开仓', close:'平仓',
       vote:'投票', register:'注册', leaderboard:'排行榜'
@@ -2170,7 +2175,7 @@ async function applyControl(mode){
       negative_or_ineligible:'负EV或不符合条件',
       default_reject_extreme_deposit_unless_forced:'默认拒绝极端保证金，除非强制',
       enabled:'已开启开关',
-      theory_negative:'?????????????',
+      theory_negative:'理论负期望，已拦截',
       insufficient_balance_for_slot_bet:'余额不足老虎机底注',
       no_proven_rtp_edge_in_config:'开关已开，但理论/样本未证明正EV，暂不自动转',
       pending:'等待中',
@@ -2212,6 +2217,27 @@ async function applyControl(mode){
       side_lists_loaded:'侧线列表已加载',
       derivatives_trade_disabled_analyze_only:'期货实盘开关关闭，仅分析',
       margin_ev_or_shares_insufficient:'保证金EV不足或可开数量为0',
+
+      no_proven_edge:'未证明正EV优势',
+      no_candidates:'暂无候选单',
+      underwrite_write_path_missing:'承销写路径未找到，仅分析',
+      auto_underwrite_default_off:'自动承销默认关闭',
+      write_path_missing:'写路径缺失',
+      vip_gate_not_met:'VIP门槛未满足',
+      gate_bypassed:'门槛门控已关闭',
+      blocked:'已拦截',
+      ready:'可自动',
+      collecting:'样本收集中',
+      no_positive_edge:'暂无正EV优势',
+      theory_from_config:'来自配置理论值',
+      need_config:'缺少可分析配置',
+      execution_not_wired_in_go_cycle:'期货写路径已确认，主循环尚未装配下单',
+      derivatives_plan_missing:'本地无期货计划',
+      auto_like_off_or_unavailable:'自动点赞关闭或不可用',
+      no_new_candidate_to_like:'无新候选人可点赞',
+      auto_vip_disabled:'自动进VIP关闭',
+      auto_vip_bet_disabled:'VIP自动下注关闭',
+      auto_vip_observe_disabled:'观战收样关闭',
       go_readonly_no_margin_orders:'期货只读，不下保证金单'
     };
     if(map[r]) return map[r];
@@ -2301,6 +2327,12 @@ async function applyControl(mode){
       ['no_public_claim_api_observed', '未观测到公开领取接口'],
       ['response_only_default_high_risk', '默认仅响应，高风险不自动发起'],
       ['probe_only_never_write', '仅探针，永不写入'],
+      ['no_proven_edge', '未证明正EV优势'],
+      ['no_candidates', '暂无候选单'],
+      ['underwrite_write_path_missing', '承销写路径未找到，仅分析'],
+      ['execution_not_wired_in_go_cycle', '期货主循环尚未装配下单'],
+      ['vip_gate_not_met', 'VIP门槛未满足'],
+      ['write_path_missing', '写路径缺失'],
       ['free_draws', '免费抽次数'],
       ['premium_free', '高级免费次数'],
       ['min_asset', '最低资产'],
@@ -2324,8 +2356,20 @@ async function applyControl(mode){
       msg = rawObj.raw || rawObj.message || rawObj.error || '';
     }
     if(!msg && typeof raw === 'string'){
-      const m = raw.match(/raw[:：]\s*([^\]}]+)/i);
+      // buy status=403 data=map[_http_status:403 raw:中文 status_code:403]
+      let m = raw.match(/raw[:：]\s*([^\]}]+)/i);
       if(m) msg = m[1].replace(/\s+status_?code.*$/i,'').replace(/[,\s]+$/,'');
+      if(!msg){
+        m = raw.match(/raw:([^\]}]+)/i);
+        if(m) msg = m[1].replace(/\s+status_?code.*$/i,'').replace(/[,\s]+$/,'');
+      }
+      if(!msg){
+        m = raw.match(/(buy|sell)\s+status\s*=\s*(\d{3})/i);
+        if(m){
+          const side = m[1].toLowerCase()==='buy' ? '买入' : '卖出';
+          msg = side + '失败 ' + m[2];
+        }
+      }
     }
     if(!msg) msg = zhReason(raw);
     if(/破产冷却/.test(String(msg)) || /破产冷却/.test(String(raw))){
@@ -2333,31 +2377,50 @@ async function applyControl(mode){
       msg = mm ? mm[0].replace(/[,\s]+$/,'') : '破产冷却中，暂时无法交易';
     }
     const st = Number((rawObj && (rawObj.status_code||rawObj._http_status)) || (String(raw).match(/status\s*=\s*(\d{3})/i)||[])[1] || 0);
-    if(st && msg && !String(msg).includes(String(st))) return '交易失败 ' + st + '：' + msg;
+    // side chinese
+    let side = zhSide(t.side || t.action || '');
+    if(st && msg && !String(msg).includes(String(st)) && !/失败/.test(String(msg))) {
+      return (side && side!=='-' ? (side+'失败 ') : '交易失败 ') + st + '：' + msg;
+    }
+    if(msg && side && side!=='-' && !String(msg).includes(side) && /失败|冷却|拒绝|不足/.test(String(msg))){
+      // keep msg
+    }
     return msg || zhReason(raw) || zhStatus(t.status||'') || '-';
   }
   function formatSignalReason(r){
-    let s = zhReason(r);
+    let s = String(r==null?'':r).trim();
     if(!s) return '';
-    // cleanup historical corrupted tech reason fragments (???? / EMA?? etc.)
+    // translate known tech fragments on raw text first (before token humanize)
     s = s
       .replace(/EMA\?+/g, 'EMA')
       .replace(/RSI\?+/g, 'RSI')
       .replace(/MACD\?+/g, 'MACD')
       .replace(/5m\?+/g, '5m涨跌')
       .replace(/target_pct\s*=/gi, '目标仓位=')
+      .replace(/\btargetpct\s*=/gi, '目标仓位=')
       .replace(/budget\s*=/gi, '预算=')
       .replace(/mode\s*=/gi, '模式=')
+      .replace(/\bEV\s*:/g, '期望：')
       .replace(/\bEV\s*=/g, '期望收益=')
+      .replace(/E\[r\]\s*=/g, '期望收益=')
       .replace(/net\s*=/gi, '净期望=')
       .replace(/risk\s*=/gi, '风险=')
       .replace(/kelly\s*=/gi, 'Kelly=')
-      .replace(/E\[r\]\s*=/g, '期望收益=')
+      .replace(/行情\s*=\s*risk_on/g, '行情=进攻')
+      .replace(/行情\s*=\s*risk_off/g, '行情=防守')
+      .replace(/行情\s*=\s*neutral/g, '行情=中性')
+      .replace(/行情\s*=\s*风险开启/g, '行情=进攻')
+      .replace(/行情\s*=\s*风险关闭/g, '行情=防守')
+      .replace(/\brisk_on\b/g, '进攻')
+      .replace(/\brisk_off\b/g, '防守')
+      .replace(/\bneutral\b/g, '中性')
       .replace(/\|\s*仓位\s*=/g, ' | 仓位=')
       .replace(/\?\?+/g, '')
       .replace(/\s*;\s*/g, '；')
       .replace(/\s{2,}/g, ' ')
       .trim();
+    // if still a pure reason key, map it
+    if(/^[a-z0-9_.=\-]+$/i.test(s)) s = zhReason(s) || s;
     return s;
   }
   function zhMetric(m){
@@ -2673,6 +2736,24 @@ async function applyControl(mode){
     return '老虎机·'+probeTxt+' · 理论RTP '+tRtp+' · 观察RTP '+oRtp+' · 样本 '+samples+'/'+target;
   }
 
+  function zhEdgeMessage(msg, label){
+    let s = String(msg==null?'':msg).trim();
+    if(!s) return '';
+    s = s
+      .replace(/^yolo\s*[:：]/i, '搏一搏：')
+      .replace(/^vip[_ ]?bet\s*[:：]/i, 'VIP下注：')
+      .replace(/^borrow\s*[:：]/i, '借贷：')
+      .replace(/^slot\s*[:：]/i, '老虎机：')
+      .replace(/^derivatives\s*[:：]/i, '期货：')
+      .replace(/^underwrite\s*[:：]/i, '承销：')
+      .replace(/^nailong\s*[:：]/i, '奶龙机：');
+    // translate residual reason keys inside message
+    s = s.replace(/\b([a-z]+(?:_[a-z0-9]+)+)\b/ig, (k) => {
+      const z = zhReason(k);
+      return (z && z !== k) ? z : k;
+    });
+    return s;
+  }
   function riskEdgeNote(edge, label){
     const name = label || '高风险';
     if(!edge || typeof edge!=='object') return name+'：尚未分析';
@@ -2686,7 +2767,7 @@ async function applyControl(mode){
     const probe = edge.probe_status || (edge.edge_ok?'ready':(gate==='theory_negative'?'blocked':'collecting'));
     const probeTxt = probe==='ready' ? '可自动' : (probe==='blocked' ? '拦截' : '收集中');
     const sampleTxt = target>0 ? (samples+'/'+target) : String(samples);
-    if(edge.message) return name+'·'+probeTxt+' · '+edge.message+' · 理论RTP '+tRtp+' / EV '+tEv+' · 观察 '+oRtp+' · 样本 '+sampleTxt;
+    if(edge.message) return name+'·'+probeTxt+' · '+zhEdgeMessage(edge.message,name)+' · 理论RTP '+tRtp+' / EV '+tEv+' · 观察 '+oRtp+' · 样本 '+sampleTxt;
     return name+'·'+probeTxt+' · 理论RTP '+tRtp+' / EV '+tEv+' · 观察 '+oRtp+' · 样本 '+sampleTxt;
   }
   function vipObserveNote(d, lotA, lot){
@@ -2711,14 +2792,10 @@ async function applyControl(mode){
   function riskEdgeChip(edge, label){
     if(!edge || typeof edge!=='object') return '<span class="earn-chip">'+(label||'高风险')+' · -</span>';
     const cls = edge.edge_ok ? 'ok' : ((edge.gate==='theory_negative' || edge.probe_status==='blocked') ? 'warn' : 'warn');
-    let st = edge.context_label || edge.probe_status || edge.gate || '-';
-    const gateMap = {
-      theory_negative:'理论拦截', no_positive_edge:'样本收集中', ready:'可自动', bypassed:'门控关闭',
-      vip_gate_not_met:'无房间/不可进', vip_no_room:'无房间', vip_missing_round:'缺回合',
-      vip_bet_path_missing:'无下注路径', trade_disabled:'实盘关闭', blocked:'拦截', collecting:'收集中'
-    };
-    if(gateMap[st]) st = gateMap[st];
-    if(gateMap[edge.gate] && !edge.context_label) st = gateMap[edge.gate];
+    let st = edge.context_label || riskProbeText(edge);
+    if(!st || st==='-') st = '分析中';
+    // if context_label is chinese keep it; if english-like, translate
+    if(/^[a-z0-9_]+$/i.test(String(st))) st = riskProbeText(edge);
     const tRtp = fmtSlotRtp(edge.theory_rtp);
     return '<span class="earn-chip '+cls+'">'+escapeHtml(String(label||'高风险'))+' · '+escapeHtml(String(st))+' · 理论 '+escapeHtml(tRtp)+'</span>';
   }
@@ -2918,7 +2995,7 @@ function renderFeatureFlagPanel(d){
       + kpiBox('试探状态', lotEdge.edge_ok ? '可自动转' : (lotEdge.probe_status==='blocked' || lotEdge.gate==='theory_negative' ? '理论拦截' : (lotEdge.probe_status==='collecting' ? '样本收集中' : (lotEdge.gate||'分析中'))))
       + '</div>'
       + '<div class="earn-chips">'
-      + '<span class="earn-chip '+lotEdgeBadge+'">老虎机 · '+escapeHtml(String(lotEdge.probe_status||lotEdge.gate||'-'))+' · 理论 '+escapeHtml(fmtSlotRtp(lotEdge.theory_rtp))+' · 观察 '+(Number(lotEdge.samples||0)>0?escapeHtml(fmtSlotRtp(lotEdge.obs_rtp)):'-')+'</span>'
+      + '<span class="earn-chip '+lotEdgeBadge+'">老虎机 · '+escapeHtml(String(riskProbeText(lotEdge)||'-'))+' · 理论 '+escapeHtml(fmtSlotRtp(lotEdge.theory_rtp))+' · 观察 '+(Number(lotEdge.samples||0)>0?escapeHtml(fmtSlotRtp(lotEdge.obs_rtp)):'-')+'</span>'
       + riskEdgeChip(yoloEdge, '搏一搏')
       + riskEdgeChip(vipBetEdge, 'VIP下注')
       + riskEdgeChip(borrowEdge, '借贷')
@@ -3562,12 +3639,27 @@ cards.push(
   
   function riskProbeText(edge){
     if(!edge || typeof edge!=='object') return '未分析';
-    const probe = edge.probe_status || (edge.edge_ok?'ready':(edge.gate==='theory_negative'?'blocked':'collecting'));
     if(edge.gate_bypassed) return '门控关闭';
-    if(probe==='ready' || edge.edge_ok) return '可自动';
-    if(probe==='blocked' || edge.gate==='theory_negative') return '拦截';
-    if(probe==='collecting' || edge.gate==='no_positive_edge') return '收集中';
-    return String(edge.gate||probe||'-');
+    if(edge.edge_ok) return '可自动';
+    const gate = String(edge.gate||'');
+    const probe = String(edge.probe_status||'');
+    const map = {
+      theory_negative:'理论拦截', no_positive_edge:'样本收集中', ready:'可自动', bypassed:'门控关闭',
+      vip_gate_not_met:'门槛未满足', vip_no_room:'无房间', vip_missing_round:'缺回合',
+      vip_bet_path_missing:'无下注路径', vip_join_path_missing:'无进房路径', write_path_missing:'写路径缺失',
+      no_candidates:'无候选', no_proven_edge:'未证优势', trade_disabled:'实盘关闭', blocked:'拦截',
+      collecting:'收集中', need_config:'缺配置', theory_from_config:'理论分析',
+      execution_not_wired_in_go_cycle:'待接线', margin_ev_or_shares_insufficient:'数量不足'
+    };
+    if(map[gate]) return map[gate];
+    if(map[probe]) return map[probe];
+    if(probe==='ready') return '可自动';
+    if(probe==='blocked') return '拦截';
+    if(probe==='collecting') return '收集中';
+    // never show raw english snake_case
+    if(gate) return zhReason(gate) || '分析中';
+    if(probe) return zhReason(probe) || '分析中';
+    return '分析中';
   }
   function riskBadgeClass(edge){
     if(!edge || typeof edge!=='object') return 'warn';
@@ -3805,11 +3897,11 @@ cards.push(
         + '<div><div class="k">观察EV</div><div class="v">'+escapeHtml(oEv)+'</div></div>'
         + '<div><div class="k">样本</div><div class="v">'+escapeHtml(String(samples)+'/'+String(target))+'</div></div>'
         + '<div><div class="k">胜率</div><div class="v">'+escapeHtml(wr)+'</div></div>'
-        + '<div><div class="k">门槛</div><div class="v">'+escapeHtml(String(e.gate||'-'))+'</div></div>'
+        + '<div><div class="k">门槛</div><div class="v">'+escapeHtml(String(riskProbeText(e)||zhReason(e.gate)||'-'))+'</div></div>'
         + '<div><div class="k">历史条数</div><div class="v">'+escapeHtml(String(histN))+'</div></div>'
         + '</div>'
         + riskHistoryHtml(e)
-        + '<div class="risk-edge-msg">'+escapeHtml(String(msg))+'</div>'
+        + '<div class="risk-edge-msg">'+escapeHtml(String(zhEdgeMessage(msg)))+'</div>'
         + '<div class="risk-edge-actions" onclick="event.stopPropagation()">'
         + '<button type="button" onclick="event.stopPropagation();locateRiskEdgeFlag(\''+String(it.id).replace(/'/g,'')+'\')">定位模块开关</button>'
         + '<button type="button" onclick="event.stopPropagation();exportRiskEdgeSamples(\''+String(it.id).replace(/'/g,'')+'\')">导出样本</button>'
@@ -3919,7 +4011,7 @@ cards.push(
     const body = ''
       + '<div class="risk-edge-meta" style="margin-top:8px">'
       + '<div><div class="k">状态</div><div class="v">'+escapeHtml(st)+'</div></div>'
-      + '<div><div class="k">门槛</div><div class="v">'+escapeHtml(String(e.gate||'-'))+'</div></div>'
+      + '<div><div class="k">门槛</div><div class="v">'+escapeHtml(String(riskProbeText(e)||zhReason(e.gate)||'-'))+'</div></div>'
       + '<div><div class="k">样本</div><div class="v">'+escapeHtml(String(samples)+'/'+String(target))+'</div></div>'
       + '<div><div class="k">胜率</div><div class="v">'+escapeHtml(wr)+'</div></div>'
       + '<div><div class="k">理论RTP</div><div class="v">'+escapeHtml(tRtp)+'</div></div>'
@@ -3927,7 +4019,7 @@ cards.push(
       + '<div><div class="k">观察RTP</div><div class="v">'+escapeHtml(oRtp)+'</div></div>'
       + '<div><div class="k">观察EV</div><div class="v">'+escapeHtml(oEv)+'</div></div>'
       + '</div>'
-      + '<div class="risk-edge-msg" style="margin-top:8px">'+escapeHtml(String(e.message||e.note||'-'))+'</div>'
+      + '<div class="risk-edge-msg" style="margin-top:8px">'+escapeHtml(String(zhEdgeMessage(e.message||e.note||'-')))+'</div>'
       + '<div class="farm-note" style="margin-top:10px">模块开关</div>'
       + flagHtml
       + '<div class="risk-edge-actions" style="margin-top:8px">'
@@ -4483,7 +4575,7 @@ async function refresh(manual=false){
         const side=t.side||'';
         return `<tr>
           <td>${ts(t.ts)}</td>
-          <td><div class="code">${t.code||t.stock_id||''}</div><div class="name">${t.mode||''}</div></td>
+          <td><div class="code">${t.code||t.stock_id||''}</div><div class="name">${zhStatus(t.mode||'')}</div></td>
           <td><span class="pill ${side}">${zhSide(side)}</span></td>
           <td>${fmt(t.shares,4)} 股 · 价 ${fmt(t.price)}</td>
           <td><span class="pill ${String(t.status||'').toLowerCase()}">${zhStatus(t.status||'')}</span><div class="reason">${formatTradeReason(t)}</div></td>
