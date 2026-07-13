@@ -142,6 +142,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 	// Plan B slot/nailong: analyze config RTP + samples; auto-spin only with proven edge.
 	bal := asFloat(firstNonNil(me["remaining_lobster"], me["balance"]))
 	slotActions, slotErrs, slotEdge := maybeAutoSlot(cfg, st, c, values, lcfg, slotCfg, bal)
+	slotEdge = applyEdgeGate(values, slotEdge)
 	actions = append(actions, slotActions...)
 	errors = append(errors, slotErrs...)
 	analysis["slot_edge"] = slotEdge
@@ -150,7 +151,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 		actions = append(actions, map[string]any{"status": "ok", "action": "nailong", "reason": "routed_to_slot_edge_gate", "edge": slotEdge})
 	}
 	// High-risk paid games: same Plan-B edge gate as slot.
-	yoloEdge := evaluateYoloEdge(st, lcfg, bal)
+	yoloEdge := applyEdgeGate(values, evaluateYoloEdge(st, lcfg, bal))
 	analysis["yolo_edge"] = yoloEdge
 	if flagOn(values, "lottery.auto_yolo", asBool(lcfg["auto_yolo"], false)) {
 		if !asBool(yoloEdge["edge_ok"], false) {
@@ -165,7 +166,11 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 			} else {
 				delta := asFloat(firstNonNil(raw["delta_lobster"], raw["net_lobster"], raw["delta"]))
 				win := asBool(raw["win"], delta > 0)
-				yoloEdge = recordRiskSample(st, "risk.edge.yolo", delta, win)
+				if edgeHistoryOn(values) {
+					yoloEdge = applyEdgeGate(values, recordRiskSample(st, "risk.edge.yolo", delta, win))
+				} else {
+					yoloEdge["history_skipped"] = true
+				}
 				analysis["yolo_edge"] = yoloEdge
 				bal = asFloat(firstNonNil(raw["after_lobster"], bal+delta))
 				actions = append(actions, map[string]any{
@@ -179,7 +184,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 		actions = append(actions, map[string]any{"status": "analyze_only", "action": "yolo", "reason": "high_variance_default_off", "edge": yoloEdge})
 	}
 
-	vipBetEdge := evaluateVipBetEdge(st, lcfg, vipState)
+	vipBetEdge := applyEdgeGate(values, evaluateVipBetEdge(st, lcfg, vipState))
 	analysis["vip_bet_edge"] = vipBetEdge
 	if flagOn(values, "lottery.auto_vip", asBool(lcfg["auto_vip"], false)) {
 		if asBool(vipState["can_enter"], false) {
@@ -201,7 +206,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 		actions = append(actions, map[string]any{"status": "analyze_only", "action": "vip_bet", "reason": "high_variance_default_off", "edge": vipBetEdge})
 	}
 
-	borrowEdge := evaluateBorrowEdge(st, lcfg, loanOffers)
+	borrowEdge := applyEdgeGate(values, evaluateBorrowEdge(st, lcfg, loanOffers))
 	analysis["borrow_edge"] = borrowEdge
 	if flagOn(values, "lottery.auto_borrow_zero_rate", asBool(lcfg["auto_borrow_zero_rate"], false)) {
 		if !asBool(borrowEdge["edge_ok"], false) {
@@ -225,7 +230,11 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 					actions = append(actions, map[string]any{"status": "error", "action": "borrow", "reason": err.Error(), "edge": borrowEdge, "amount": amt, "source": src})
 				} else {
 					// treat successful zero-rate borrow as non-loss sample (delta 0 utility)
-					borrowEdge = recordRiskSample(st, "risk.edge.borrow", 0, true)
+					if edgeHistoryOn(values) {
+						borrowEdge = applyEdgeGate(values, recordRiskSample(st, "risk.edge.borrow", 0, true))
+					} else {
+						borrowEdge["history_skipped"] = true
+					}
 					analysis["borrow_edge"] = borrowEdge
 					actions = append(actions, map[string]any{
 						"status": "ok", "action": "borrow",

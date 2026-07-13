@@ -135,6 +135,9 @@ risk:
   min_net_edge: 0
   min_rtp: 1.0
   min_samples: 20
+  # Plan-B high-risk switches (toggleable from control page)
+  edge_gate_enabled: true
+  edge_history_enabled: true
 
 storage:
   db_path: "data/bot.db"

@@ -144,6 +144,57 @@ func flagOn(values map[string]any, id string, def bool) bool {
 	return def
 }
 
+// edgeGateOn: Plan-B positive-EV gate. Default ON for safety.
+func edgeGateOn(values map[string]any) bool {
+	return flagOn(values, "risk.edge_gate_enabled", true)
+}
+
+// edgeHistoryOn: whether to persist sample history for high-risk modules. Default ON.
+func edgeHistoryOn(values map[string]any) bool {
+	return flagOn(values, "risk.edge_history_enabled", true)
+}
+
+// applyEdgeGate annotates edge with gate/history switch state.
+// When Plan-B gate is disabled, only EV/RTP style blocks are bypassed.
+// Hard prerequisites (trade switch off / no VIP room / no offers) stay blocked.
+func applyEdgeGate(values map[string]any, edge map[string]any) map[string]any {
+	if edge == nil {
+		edge = map[string]any{}
+	}
+	out := map[string]any{}
+	for k, v := range edge {
+		out[k] = v
+	}
+	out["gate_enabled"] = edgeGateOn(values)
+	out["history_enabled"] = edgeHistoryOn(values)
+	g := fmt.Sprint(out["gate"])
+	hard := map[string]bool{
+		"trade_disabled":     true,
+		"vip_gate_not_met":   true,
+		"no_candidates":      true,
+		"need_config":        false,
+	}
+	// treat empty offers / missing context as hard via message keywords already encoded as gates above
+	if !edgeGateOn(values) {
+		out["gate_bypassed"] = false
+		if hard[g] {
+			// keep blocked
+			return out
+		}
+		// bypass theory/sample EV gates only
+		if g == "theory_negative" || g == "no_positive_edge" || g == "need_config" || g == "ready" || g == "" || !asBool(out["edge_ok"], false) {
+			out["gate_bypassed"] = true
+			out["edge_ok"] = true
+			out["probe_status"] = "ready"
+			out["gate"] = "bypassed"
+			out["message"] = "方案B门槛门控已关闭：仅按模块开关执行（硬前置条件仍生效）"
+		}
+		return out
+	}
+	out["gate_bypassed"] = false
+	return out
+}
+
 func runFarmInfo(farm map[string]any) map[string]any {
 	fs := asMap(farm)
 	status := "idle"
@@ -275,7 +326,7 @@ func runDerivatives(cfg *config.Config, st *storage.Storage, values map[string]a
 		dcfg = cfg.Derivatives
 	}
 	tradeEnabled := flagOn(values, "derivatives.trade_enabled", asBool(dcfg["trade_enabled"], false))
-	edge := evaluateDerivativesEdge(st, dcfg, ds, tradeEnabled)
+	edge := applyEdgeGate(values, evaluateDerivativesEdge(st, dcfg, ds, tradeEnabled))
 	if len(ds) == 0 {
 		status := "analyze_only"
 		if tradeEnabled {
@@ -378,7 +429,7 @@ func runBrokers(st *storage.Storage, c *client.Client, values map[string]any) ma
 
 	// Plan-B underwrite edge
 	bcfg := map[string]any{}
-	uwEdge := evaluateUnderwriteEdge(st, bcfg, len(underwriters))
+	uwEdge := applyEdgeGate(values, evaluateUnderwriteEdge(st, bcfg, len(underwriters)))
 	stUw := "skip"
 	if asBool(uwEdge["edge_ok"], false) {
 		stUw = "ok"

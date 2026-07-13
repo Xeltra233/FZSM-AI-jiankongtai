@@ -33,6 +33,8 @@ var Specs = []Spec{
 	{"derivatives.trade_enabled", "derivatives", "trade_enabled", "期货实盘下单", "derivatives", "high", "方案B：需净边为正，关闭时仅分析"},
 	{"brokers.auto_like", "brokers", "auto_like", "券商自动点赞", "brokers", "low", "点赞热门券商"},
 	{"brokers.auto_underwrite", "brokers", "auto_underwrite", "自动承销", "brokers", "high", "方案B：正EV门槛，默认关"},
+	{"risk.edge_gate_enabled", "risk", "edge_gate_enabled", "方案B门槛门控", "risk", "mid", "开启后高风险自动执行必须通过正EV门槛；关闭则只看模块开关"},
+	{"risk.edge_history_enabled", "risk", "edge_history_enabled", "高风险样本历史", "risk", "low", "开启后记录老虎机/搏一搏/借贷等最近样本，供门槛分析"},
 }
 
 func sectionMap(cfg *config.Config, section string) map[string]any {
@@ -52,6 +54,11 @@ func sectionMap(cfg *config.Config, section string) map[string]any {
 			return map[string]any{}
 		}
 		return cfg.Brokers
+	case "risk":
+		if cfg.Risk == nil {
+			return map[string]any{}
+		}
+		return cfg.Risk
 	default:
 		return map[string]any{}
 	}
@@ -80,7 +87,14 @@ func Defaults(cfg *config.Config) map[string]bool {
 	out := map[string]bool{}
 	for _, sp := range Specs {
 		sec := sectionMap(cfg, sp.Section)
-		out[sp.ID] = asBool(sec[sp.Key], false)
+		def := false
+		switch sp.ID {
+		case "risk.edge_gate_enabled", "risk.edge_history_enabled":
+			def = true
+		case "lottery.auto_checkin", "lottery.auto_draw_free", "lottery.auto_draw_premium_free", "brokers.auto_like":
+			def = true
+		}
+		out[sp.ID] = asBool(sec[sp.Key], def)
 	}
 	return out
 }
@@ -120,6 +134,7 @@ func Get(cfg *config.Config, st *storage.Storage) map[string]any {
 			"lottery":     "抽奖/搏一搏/VIP",
 			"derivatives": "期货",
 			"brokers":     "券商",
+			"risk":        "高风险门槛",
 		},
 	}
 }

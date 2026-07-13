@@ -280,7 +280,7 @@ func recordSlotSample(st *storage.Storage, delta float64, win bool) map[string]a
 }
 
 func maybeAutoSlot(cfg *config.Config, st *storage.Storage, c *client.Client, values map[string]any, lcfg map[string]any, slotCfg map[string]any, balance float64) (actions []map[string]any, errors []string, edge map[string]any) {
-	edge = updateSlotEdge(st, lcfg, slotCfg)
+	edge = applyEdgeGate(values, updateSlotEdge(st, lcfg, slotCfg))
 	auto := flagOn(values, "lottery.auto_slot", asBool(lcfg["auto_slot"], false)) ||
 		flagOn(values, "lottery.auto_nailong", asBool(lcfg["auto_nailong"], false))
 	if !auto {
@@ -337,7 +337,11 @@ func maybeAutoSlot(cfg *config.Config, st *storage.Storage, c *client.Client, va
 		}
 		delta := asFloat(firstNonNil(raw["delta_lobster"], raw["net_lobster"]))
 		win := asBool(raw["win"], delta > 0)
-		edge = recordSlotSample(st, delta, win)
+		if edgeHistoryOn(values) {
+			edge = applyEdgeGate(values, recordSlotSample(st, delta, win))
+		} else {
+			edge["history_skipped"] = true
+		}
 		balance = asFloat(firstNonNil(raw["after_lobster"], balance+delta))
 		spun++
 		actions = append(actions, map[string]any{

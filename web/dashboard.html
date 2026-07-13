@@ -1438,6 +1438,8 @@
             <div class="flag-row" id="featureFlagPanel"><span class="note">加载中...</span></div>
             <div class="farm-note" id="sideNote">侧线: IPO/对赌/基金</div>
             <div class="farm-note" style="margin-top:10px">高风险门槛总览（方案B）</div>
+            <div class="farm-note" id="riskEdgePolicyNote">门槛门控与样本历史可开关；关闭门控后仅按模块开关执行（硬前置仍生效）</div>
+            <div class="flag-row" id="riskEdgePolicyFlags"><span class="note">加载中...</span></div>
             <div class="risk-edge-toggle" id="riskEdgeToggleRow">
               <label class="flag-sw">
                 <input id="riskEdgeEnabledSw" type="checkbox" onchange="setRiskEdgePanelEnabled(this.checked)">
@@ -1595,7 +1597,7 @@
   </div>
 
 <script>
-let auto = true, timer = null, currentTab = 'overview', refreshing = false, pendingControl = null, toastTimer = null;
+let auto = true, timer = null, currentTab = 'overview', refreshing = false, pendingControl = null, toastTimer = null, panelStarted = false, cookieMgrBusy = false;
 let riskEdgeFilter = 'all';
 let riskEdgeCache = {};
 let lastRiskEdgesPayload = null;
@@ -2717,7 +2719,27 @@ function earnBadgeClass(st){
       if(el) el.classList.remove('busy');
     }
   }
-  function renderFeatureFlagPanel(d){
+  
+  function renderRiskEdgePolicyFlags(d){
+    const box = document.getElementById('riskEdgePolicyFlags');
+    if(!box) return;
+    const flags = (d && d.feature_flags) || {};
+    const gateOn = flagValue(flags, 'risk.edge_gate_enabled', true);
+    const histOn = flagValue(flags, 'risk.edge_history_enabled', true);
+    box.innerHTML = [
+      flagSwitchHtml('risk.edge_gate_enabled', '方案B门槛门控', gateOn, 'mid'),
+      flagSwitchHtml('risk.edge_history_enabled', '样本历史记录', histOn, 'low')
+    ].join('');
+    const note = document.getElementById('riskEdgePolicyNote');
+    if(note){
+      note.textContent = (gateOn ? '门槛门控：开（高风险自动需正EV）' : '门槛门控：关（仅按模块开关，硬前置仍生效）')
+        + ' · '
+        + (histOn ? '样本历史：开' : '样本历史：关');
+    }
+  }
+
+function renderFeatureFlagPanel(d){
+    renderRiskEdgePolicyFlags(d);
     // 开关主位置在赚钱页「农场」卡；控制页不再放整排开关
     const box = document.getElementById('featureFlagPanel');
     if(!box) return;
@@ -3469,6 +3491,7 @@ cards.push(
   function riskProbeText(edge){
     if(!edge || typeof edge!=='object') return '未分析';
     const probe = edge.probe_status || (edge.edge_ok?'ready':(edge.gate==='theory_negative'?'blocked':'collecting'));
+    if(edge.gate_bypassed) return '门控关闭';
     if(probe==='ready' || edge.edge_ok) return '可自动';
     if(probe==='blocked' || edge.gate==='theory_negative') return '拦截';
     if(probe==='collecting' || edge.gate==='no_positive_edge') return '收集中';
@@ -3492,6 +3515,7 @@ cards.push(
     return '<div class="risk-edge-hist">'+parts.join('')+'</div>';
   }
   function renderRiskEdges(d){
+    renderRiskEdgePolicyFlags(d || lastRiskEdgesPayload || {});
     applyRiskEdgePanelVisibility();
     if(!riskEdgePanelEnabled){
       lastRiskEdgesPayload = d || lastRiskEdgesPayload || {};
@@ -3654,7 +3678,7 @@ cards.push(
     const hist = Array.isArray(e.history) ? e.history : [];
     let histHtml = '';
     if(!hist.length){
-      histHtml = '<div class="note">暂无样本历史。自动执行产生盈亏后会记录最近20条。</div>';
+      histHtml = '<div class="note">暂无样本历史。开启「样本历史记录」并产生自动执行后，会保存最近20条。</div>';
     } else {
       histHtml = '<div class="risk-detail-list">' + hist.slice(0,20).map(row => {
         const d = Number(row && row.delta);
