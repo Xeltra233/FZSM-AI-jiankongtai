@@ -88,18 +88,18 @@ func Run(cfg *config.Config, st *storage.Storage, c *client.Client, force bool, 
 	// Importing cookie is enough; no python re-login required.
 	ok := stocksOK || asBool(lottery["ok"])
 	degraded := ok && !(stocksOK && lotteryOK)
-	msg := "cookie ????"
+	msg := "cookie 保活正常"
 	if ok && degraded {
 		if stocksOK && !asBool(lottery["ok"]) && !asBool(lottery["skipped"]) {
-			msg = "cookie ????????????????"
+			msg = "cookie 部分有效：股市正常，抽奖探测失败"
 		} else if !stocksOK && asBool(lottery["ok"]) {
-			msg = "cookie ????????????????"
+			msg = "cookie 部分有效：抽奖正常，股市探测失败"
 		} else {
-			msg = "cookie ????"
+			msg = "cookie 部分有效"
 		}
 	}
 	if !ok {
-		msg = "cookie ????????????? cookie"
+		msg = "cookie 保活失败，请在面板重新导入 cookie"
 	}
 	state := map[string]any{
 		"enabled": true, "ok": ok, "degraded": degraded, "ts": now(), "cycle": cycle, "last_cycle": cycle,
@@ -108,10 +108,10 @@ func Run(cfg *config.Config, st *storage.Storage, c *client.Client, force bool, 
 		"manual_reauth_hint": nil, "prev_ok": prev["ok"], "impl": "go", "auto": true,
 	}
 	if !ok {
-		state["manual_reauth_hint"] = "?? ? Cookie ???????? fz_lottery ??????????"
+		state["manual_reauth_hint"] = "控制 → Cookie 管理：粘贴浏览器 fz_lottery 完整值，点导入并探测"
 		state["alert"] = "auth_keepalive_failed"
 	} else if degraded {
-		state["manual_reauth_hint"] = "????????? cookie????????"
+		state["manual_reauth_hint"] = "可选：重新导入完整 cookie，修复失效侧探测"
 		state["alert"] = "auth_keepalive_degraded"
 	}
 	_ = st.SetState("auth_keepalive", state)
