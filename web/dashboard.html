@@ -2971,7 +2971,7 @@ function renderFeatureFlagPanel(d){
     if(!Array.isArray(rooms)) rooms = [];
     const pref = lotA.vip_room_pref || {};
     const selected = lotA.vip_selected_room || ctx.selected_room || {};
-    return {rooms, pref, selected, ctx, canEnter: !!(state.can_enter || ctx.can_enter), minBal: Number(state.min_balance||ctx.min_balance||0), bal: Number(state.balance_lobster||ctx.balance_lobster||0), write: (ctx.write_paths||lotA.write_paths||{})};
+    return {rooms, pref, selected, ctx, auto: lotA.vip_auto_select || {}, canEnter: !!(state.can_enter || ctx.can_enter), minBal: Number(state.min_balance||ctx.min_balance||0), bal: Number(state.balance_lobster||ctx.balance_lobster||0), write: (ctx.write_paths||lotA.write_paths||{})};
   }
   function renderVipRoomPanel(d){
     const info = getVipRoomsFromData(d||window.__lastOverview||{});
@@ -3012,7 +3012,8 @@ function renderFeatureFlagPanel(d){
       }).join('');
     }
     const gateTxt = info.canEnter ? '余额可正式入座' : ('余额不足正式入座（'+Math.round(info.bal||0)+' / 门槛 '+Math.round(info.minBal||0)+'）');
-    const prefTxt = prefId ? ('已选手动房间 #'+prefId+'（bot 优先尝试）') : '未手动选房 · 将按自动策略选房';
+    const autoSrc = String((info.selected&&info.selected._source)|| (info.auto&&info.auto.selected_source) || '');
+    const prefTxt = prefId ? ('已选手动房间 #'+prefId+'（bot 优先尝试）') : ('未手动选房 · 自动策略'+(autoSrc?(' · 来源 '+autoSrc):''));
     const writeTxt = writeOk ? '写路径可用' : '写路径未确认（不会假装可进房）';
     return '<div class="vip-room-box">'
       + '<div class="vip-room-head"><div class="ttl">VIP 房间选择</div><div class="note">'+escapeHtml(writeTxt)+'</div></div>'
@@ -3022,7 +3023,7 @@ function renderFeatureFlagPanel(d){
       + '</div>'
       + '<div class="earn-note">'+escapeHtml(prefTxt)+' · '+escapeHtml(gateTxt)+'</div>'
       + '<div class="vip-room-list">'+listHtml+'</div>'
-      + '<div class="earn-note">说明：选择只写入本地偏好；正式进房/下注仍受余额门槛与方案B门槛。余额不足时可观战收样，不会强制下注。</div>'
+      + '<div class="earn-note">说明：选择只写入本地偏好；未选手动房时 bot 按自动策略选公开房。正式进房/下注仍受 auto_vip 开关、余额门槛与方案B门槛；余额不足不盲进。</div>'
       + '</div>';
   }
   function onVipRoomSearch(v){
