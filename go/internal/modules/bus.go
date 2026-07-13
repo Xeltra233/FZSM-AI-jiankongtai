@@ -1069,6 +1069,7 @@ func runLeaderboard(st *storage.Storage, c *client.Client, account map[string]an
 	return result("leaderboard", "排行榜", status, actions, analysis, errors, ev, nil)
 }
 
+
 func firstNonEmptyStr(xs ...string) string {
 	for _, x := range xs {
 		x = strings.TrimSpace(x)
@@ -1177,30 +1178,46 @@ func runAdmin(st *storage.Storage) map[string]any {
 	return result("admin", "admin", "forbidden", []map[string]any{{"status": "forbidden", "action": "probe", "reason": "admin_probe_only"}}, map[string]any{"note": "probe_only"}, nil, nil, nil)
 }
 
-// BuildAccountFromLive pulls /me + /portfolio into last_loop.account shape.
-func BuildAccountFromLive(c *client.Client) (map[string]any, string, error) {
-	me, err := c.StocksMe()
-	if err != nil {
-		return nil, "", err
-	}
+// NormalizeAccountMaps maps live /me + /portfolio payloads into account shape.
+// Pure helper for offline tests and BuildAccountFromLive.
+func NormalizeAccountMaps(me, pf map[string]any) (map[string]any, string) {
+	me = asMap(me)
+	pf = asMap(pf)
 	user := asMap(me["user"])
 	name := strings.TrimSpace(fmt.Sprint(user["display_name"]))
 	if name == "" || name == "<nil>" {
 		name = strings.TrimSpace(fmt.Sprint(user["username"]))
 	}
-	cash := asFloat(me["balance_lobster"])
-	equity := asFloat(me["total_asset_lobster"])
-	positions := []any{}
-	stockValue := 0.0
-	if pf, err := c.Portfolio(); err == nil {
-		positions = asSlice(pf["positions"])
+	cash := firstNonZeroF(asFloat(me["balance_lobster"]), asFloat(me["cash"]), asFloat(me["balance"]))
+	equity := firstNonZeroF(asFloat(me["total_asset_lobster"]), asFloat(me["equity"]), asFloat(me["total"]))
+	positions := asSlice(me["positions"])
+	stockValue := firstNonZeroF(asFloat(me["stock_value_lobster"]), asFloat(me["stock_value"]), asFloat(me["market_value"]))
+	pnl := firstNonNil(me["pnl_lobster"], me["pnl"])
+	pnlPct := firstNonNil(me["pnl_pct"], me["pnl_percent"])
+	if len(pf) > 0 {
+		if arr := asSlice(pf["positions"]); len(arr) > 0 {
+			positions = arr
+		}
 		summary := asMap(pf["summary"])
-		if v := asFloat(summary["stock_value"]); v != 0 {
+		if v := firstNonZeroF(asFloat(summary["balance_lobster"]), asFloat(summary["cash"]), asFloat(summary["balance"])); v != 0 {
+			cash = v
+		}
+		if v := firstNonZeroF(asFloat(summary["total_asset_lobster"]), asFloat(summary["equity"]), asFloat(summary["total"])); v != 0 {
+			equity = v
+		}
+		if v := firstNonZeroF(
+			asFloat(summary["stock_value_lobster"]),
+			asFloat(summary["stock_value"]),
+			asFloat(summary["holdings_value"]),
+			asFloat(summary["market_value"]),
+		); v != 0 {
 			stockValue = v
-		} else if v := asFloat(summary["holdings_value"]); v != 0 {
-			stockValue = v
-		} else if v := asFloat(summary["market_value"]); v != 0 {
-			stockValue = v
+		}
+		if summary["pnl_lobster"] != nil || summary["pnl"] != nil {
+			pnl = firstNonNil(summary["pnl_lobster"], summary["pnl"])
+		}
+		if summary["pnl_pct"] != nil {
+			pnlPct = summary["pnl_pct"]
 		}
 		if stockValue == 0 {
 			for _, item := range positions {
@@ -1219,15 +1236,32 @@ func BuildAccountFromLive(c *client.Client) (map[string]any, string, error) {
 	if stockValue == 0 && equity != 0 {
 		stockValue = equity - cash
 	}
+	if equity == 0 && (cash != 0 || stockValue != 0) {
+		equity = cash + stockValue
+	}
 	account := map[string]any{
 		"mode":        "live",
 		"cash":        cash,
 		"equity":      equity,
 		"stock_value": stockValue,
-		"pnl":         me["pnl"],
-		"pnl_pct":     me["pnl_pct"],
+		"pnl":         pnl,
+		"pnl_pct":     pnlPct,
 		"positions":   positions,
 	}
+	return account, name
+}
+
+// BuildAccountFromLive pulls /me + /portfolio into last_loop.account shape.
+func BuildAccountFromLive(c *client.Client) (map[string]any, string, error) {
+	me, err := c.StocksMe()
+	if err != nil {
+		return nil, "", err
+	}
+	pf := map[string]any{}
+	if got, err := c.Portfolio(); err == nil {
+		pf = got
+	}
+	account, name := NormalizeAccountMaps(me, pf)
 	return account, name, nil
 }
 

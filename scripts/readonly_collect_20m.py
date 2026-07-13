@@ -165,12 +165,57 @@ def summarize_tick(stocks: dict, lottery: dict) -> dict:
     slot_cfg = unwrap((lottery.get("/lottery/api/slot/config") or {}).get("data"))
     offers = unwrap((lottery.get("/lottery/api/loan/offers") or {}).get("data"))
 
-    # normalize common fields
-    cash = pick(port, "cash", default=pick(me, "cash", "balance", "balance_lobster"))
-    equity = pick(port, "equity", "total", "net_asset")
+    # Live API uses *_lobster names; portfolio nests totals under summary.
+    port_summary = pick(port if isinstance(port, dict) else {}, "summary", default={})
+    if not isinstance(port_summary, dict):
+        port_summary = {}
+    me_map = me if isinstance(me, dict) else {}
+    cash = pick(
+        port_summary,
+        "balance_lobster",
+        "cash",
+        "balance",
+        default=pick(me_map, "balance_lobster", "cash", "balance"),
+    )
+    equity = pick(
+        port_summary,
+        "total_asset_lobster",
+        "equity",
+        "total",
+        "net_asset",
+        default=pick(me_map, "total_asset_lobster", "equity", "total", "net_asset"),
+    )
+    stock_value = pick(
+        port_summary,
+        "stock_value_lobster",
+        "stock_value",
+        "holdings_value",
+        "market_value",
+        default=pick(me_map, "stock_value_lobster", "stock_value", "market_value"),
+    )
     positions = pick(port, "positions", default=[])
     if not isinstance(positions, list):
-        positions = []
+        positions = pick(me_map, "positions", default=[])
+        if not isinstance(positions, list):
+            positions = []
+    if stock_value is None and positions:
+        total = 0.0
+        for item in positions:
+            if not isinstance(item, dict):
+                continue
+            mv = pick(item, "market_value", "value")
+            if mv is None:
+                shares = pick(item, "shares", "quantity", default=0) or 0
+                price = pick(item, "price", "current_price", default=0) or 0
+                try:
+                    mv = float(shares) * float(price)
+                except Exception:
+                    mv = 0
+            try:
+                total += float(mv or 0)
+            except Exception:
+                pass
+        stock_value = total
     stocks_n = 0
     if isinstance(market, dict):
         arr = market.get("stocks") or market.get("list") or []
@@ -181,12 +226,43 @@ def summarize_tick(stocks: dict, lottery: dict) -> dict:
 
     farm_plots = {}
     if isinstance(farm, dict):
+        plots = farm.get("plots") or []
+        empty = growing = ready = 0
+        crop = None
+        if isinstance(plots, list):
+            for p in plots:
+                if not isinstance(p, dict):
+                    continue
+                st = str(p.get("status") or p.get("state") or "").lower()
+                if st in {"ready", "mature", "harvestable"}:
+                    ready += 1
+                elif st in {"growing", "planted"}:
+                    growing += 1
+                elif st in {"empty", "", "none"}:
+                    empty += 1
+                else:
+                    if p.get("crop_key"):
+                        growing += 1
+                    else:
+                        empty += 1
+                if crop is None and p.get("crop_key"):
+                    crop = p.get("crop_key")
+        steal_left = pick(farm, "steal_left", "steal_remaining")
+        if steal_left is None:
+            limit = pick(farm, "daily_steal_limit")
+            used = pick(farm, "daily_steal_count", default=0)
+            if limit is not None:
+                try:
+                    steal_left = max(0, int(limit) - int(used or 0))
+                except Exception:
+                    steal_left = None
         farm_plots = {
-            "empty": pick(farm, "empty", default=None),
-            "growing": pick(farm, "growing", default=None),
-            "ready": pick(farm, "ready", default=None),
-            "crop": pick(farm, "crop", "crop_key", default=None),
-            "steal_left": pick(farm, "steal_left", "steal_remaining", default=None),
+            "empty": empty if isinstance(plots, list) else pick(farm, "empty", default=None),
+            "growing": growing if isinstance(plots, list) else pick(farm, "growing", default=None),
+            "ready": ready if isinstance(plots, list) else pick(farm, "ready", default=None),
+            "crop": crop if crop is not None else pick(farm, "crop", "crop_key", default=None),
+            "steal_left": steal_left,
+            "plots_n": len(plots) if isinstance(plots, list) else None,
         }
 
     vip = {}
@@ -202,15 +278,24 @@ def summarize_tick(stocks: dict, lottery: dict) -> dict:
 
     slot = {}
     if isinstance(slot_cfg, dict):
+        settings = slot_cfg.get("settings") if isinstance(slot_cfg.get("settings"), dict) else {}
         slot = {
             "keys": list(slot_cfg.keys())[:20],
-            "bet": pick(slot_cfg, "bet", "base_bet", "spin_bet"),
-            "rtp": pick(slot_cfg, "rtp", "theory_rtp"),
+            "bet": pick(
+                settings,
+                "bet_lobster",
+                "bet",
+                "base_bet",
+                "spin_bet",
+                default=pick(slot_cfg, "bet_lobster", "bet", "base_bet", "spin_bet"),
+            ),
+            "rtp": pick(settings, "rtp", "theory_rtp", default=pick(slot_cfg, "rtp", "theory_rtp")),
         }
 
     return {
         "cash": cash,
         "equity": equity,
+        "stock_value": stock_value,
         "positions_n": len(positions),
         "market_stocks_n": stocks_n,
         "farm": farm_plots,
