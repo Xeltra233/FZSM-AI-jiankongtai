@@ -1,4 +1,10 @@
 {
+  "name": "fzsm-ai-jiankongtai",
+  "private": true,
+  "description": "Go-only FZSM bot/dashboard. package.json is only for local Playwright tooling.",
+  "scripts": {
+    "start": "node -e \"console.error('This is a Go service. Use Dockerfile / scripts/start-server.sh'); process.exit(1)\""
+  },
   "dependencies": {
     "playwright": "^1.61.1"
   }

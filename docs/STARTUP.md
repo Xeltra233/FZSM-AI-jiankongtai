@@ -66,3 +66,12 @@ bin\fzsm-doctor.exe --map
 - 共用文件：`auth/cookies.json`
 - 服务器部署请设置 `FZSM_ADMIN_PASSWORD`
 - 详见 `docs/COOKIE_MANAGEMENT.md`
+
+## 9. Zeabur 崩溃修复要点
+如果日志出现 `Cannot find module '/src/index.js'`：
+1. 不要用 Node 自动部署
+2. 改用仓库根目录 `Dockerfile`
+3. 端口 `8787`
+4. 挂载目录：`auth`、`data`、`config`
+5. 设置 `FZSM_ADMIN_PASSWORD`
+

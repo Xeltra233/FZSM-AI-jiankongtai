@@ -174,6 +174,48 @@ config/               配置目录（内含 config.yaml）
 docs/                文档
 ```
 
+
+
+## Zeabur / Docker 部署
+
+本项目是 **Go 服务**，不是 Node `/src/index.js`。
+
+### 为什么会报 `Cannot find module '/src/index.js'`
+Zeabur 看到仓库根目录有 `package.json`，会误判成 Node 项目。  
+现已提供 `Dockerfile`，请用 **Dockerfile 部署**，不要用 Node 自动构建。
+
+### Zeabur 设置
+1. 构建方式：`Dockerfile`
+2. 端口：`8787`
+3. 环境变量：
+   - `FZSM_ADMIN_PASSWORD=你的管理密码`（必须）
+   - `HOST=0.0.0.0`
+   - `PORT=8787`
+   - `ENABLE_BOT=1`
+   - `BOT_MODE=live`
+   - `BOT_EVERY=18`
+4. 持久化挂载（目录）：
+   - `auth` → `/app/auth`
+   - `data` → `/app/data`
+   - `config` → `/app/config`
+   - 建议：`logs` → `/app/logs`
+   - 建议：`web` → `/app/web`
+
+### 启动命令
+镜像默认：
+```sh
+/app/scripts/start-server.sh
+```
+会启动：
+- `fzsm-bot`（可关：`ENABLE_BOT=0`）
+- `fzsm-dashboard`（前台进程）
+
+### 首次上线
+1. 挂好 `auth/data/config`
+2. 设置 `FZSM_ADMIN_PASSWORD`
+3. 打开面板登录（用户名 `admin`）
+4. 在控制页导入业务 cookie（可直接贴原值）
+
 ## 备注
 
 - 赚钱相关：农场 / 抽奖 / 侧线 / 券商 / VIP 等模块会按开关与接口可用性运行

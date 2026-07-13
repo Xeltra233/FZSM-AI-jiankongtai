@@ -1,0 +1,14 @@
+node_modules
+.git
+goal-*
+shots
+_research
+_patch_parts
+logs
+data
+auth
+bin
+*.exe
+*.exe~
+**/*.log
+**/*.db

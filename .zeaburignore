@@ -1,0 +1,10 @@
+node_modules
+goal-*
+shots
+_research
+_patch_parts
+logs
+data
+auth
+*.exe
+*.exe~
