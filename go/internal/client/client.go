@@ -28,6 +28,9 @@ type Client struct {
 	CookieFile  string
 	HTTP        *http.Client
 	Timeout     time.Duration
+	// primaryCookies always attached to requests (host-independent).
+	// This avoids cookiejar domain mismatches for cross-host auth cookies.
+	primaryCookies map[string]string
 }
 
 func New(apiBase, lotteryBase, cookieFile string) (*Client, error) {
@@ -50,6 +53,7 @@ func New(apiBase, lotteryBase, cookieFile string) (*Client, error) {
 			Timeout: 12 * time.Second,
 			Jar:     jar,
 		},
+		primaryCookies: map[string]string{},
 	}
 	if cookieFile != "" {
 		_, _ = c.LoadCookies(cookieFile)
@@ -83,10 +87,21 @@ func (c *Client) LoadCookies(path string) (int, error) {
 			}
 		}
 	}
+	if c.primaryCookies == nil {
+		c.primaryCookies = map[string]string{}
+	}
 	n := 0
 	for _, it := range items {
 		if it.Name == "" || it.Value == "" || it.Name == "<nil>" || it.Value == "<nil>" {
 			continue
+		}
+		// always keep auth-bearing cookies for direct Cookie header injection
+		ln := strings.ToLower(strings.TrimSpace(it.Name))
+		if ln == "fz_lottery" || strings.Contains(ln, "session") || strings.Contains(ln, "token") || strings.Contains(ln, "auth") {
+			c.primaryCookies[it.Name] = it.Value
+		} else if len(c.primaryCookies) == 0 {
+			// fallback: keep first cookie as primary if nothing matched
+			c.primaryCookies[it.Name] = it.Value
 		}
 		domains := []string{"fanzisima.xyz", "api.fanzisima.xyz", "www.fanzisima.xyz"}
 		if it.Domain != "" && it.Domain != "<nil>" {
@@ -209,6 +224,26 @@ func (c *Client) do(method, fullURL string, body any, headers map[string]string)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// Force-attach primary auth cookies. Jar alone is unreliable across fanzisima.xyz / api.fanzisima.xyz.
+	if len(c.primaryCookies) > 0 {
+		parts := make([]string, 0, len(c.primaryCookies))
+		for name, val := range c.primaryCookies {
+			name = strings.TrimSpace(name)
+			val = strings.TrimSpace(val)
+			if name == "" || val == "" {
+				continue
+			}
+			parts = append(parts, name+"="+val)
+		}
+		if len(parts) > 0 {
+			// If caller already set Cookie, append.
+			if old := strings.TrimSpace(req.Header.Get("Cookie")); old != "" {
+				req.Header.Set("Cookie", old+"; "+strings.Join(parts, "; "))
+			} else {
+				req.Header.Set("Cookie", strings.Join(parts, "; "))
+			}
+		}
+	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return 0, nil, err
@@ -256,6 +291,12 @@ func unwrapData(data any) map[string]any {
 	if m, ok := data.(map[string]any); ok {
 		if d, ok := m["data"]; ok {
 			if dm, ok := d.(map[string]any); ok {
+				// preserve top-level flags sometimes useful for auth checks
+				if _, has := dm["success"]; !has {
+					if s, ok := m["success"]; ok {
+						dm["success"] = s
+					}
+				}
 				return dm
 			}
 		}

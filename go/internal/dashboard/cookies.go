@@ -252,28 +252,25 @@ func probeCookieAuth(c *client.Client) map[string]any {
 	}
 	t0 := time.Now()
 	stocks := map[string]any{"ok": false}
-	if me, err := c.StocksMe(); err != nil {
-		stocks["ok"] = false
-		stocks["error"] = err.Error()
-		stocks["latency_ms"] = int(time.Since(t0).Milliseconds())
-	} else {
-		status := int(asFloat(me["_http_status"]))
-		ok := status > 0 && status < 400 && me != nil && (me["balance_lobster"] != nil || me["user"] != nil || me["total_asset_lobster"] != nil || len(me) > 1)
-		userName := ""
-		if u, okm := me["user"].(map[string]any); okm && u != nil {
-			userName = firstNonEmpty(asString(u["display_name"]), asString(u["username"]), asString(u["global_name"]))
-		}
-		stocks = map[string]any{
-			"ok":         ok,
-			"status":     status,
-			"latency_ms": int(time.Since(t0).Milliseconds()),
-			"user":       userName,
-			"balance":    me["balance_lobster"],
-			"equity":     me["total_asset_lobster"],
-		}
-		if !ok {
-			stocks["error"] = fmt.Sprintf("stocks /me status=%d", status)
-		}
+	// Use AuthProbe so stocks checks match bot keepalive (/me,/portfolio,/farm/me + forced cookie header)
+	probe := c.AuthProbe()
+	me, _ := probe["me"].(map[string]any)
+	if me == nil {
+		me = map[string]any{}
+	}
+	userName := ""
+	if u, okm := me["user"].(map[string]any); okm && u != nil {
+		userName = firstNonEmpty(asString(u["display_name"]), asString(u["username"]), asString(u["global_name"]))
+	}
+	stocks = map[string]any{
+		"ok":         asBoolAny(probe["ok"]),
+		"status":     probe["status"],
+		"latency_ms": int(time.Since(t0).Milliseconds()),
+		"user":       userName,
+		"balance":    me["balance_lobster"],
+		"equity":     me["total_asset_lobster"],
+		"endpoint":   probe["endpoint"],
+		"error":      probe["error"],
 	}
 	t1 := time.Now()
 	lottery := map[string]any{"ok": false}
