@@ -435,9 +435,19 @@ func (s *Server) Handler() http.Handler {
 		if r.Method == http.MethodGet {
 			pref := s.st.GetStateMap("vip.room_pref")
 			if len(pref) == 0 {
-				pref = map[string]any{"room_id": nil, "mode": "auto"}
+				pref = map[string]any{"room_id": nil, "mode": "auto", "has_password": false}
 			}
-			writeJSON(w, 200, map[string]any{"ok": true, "pref": pref})
+			// do not expose raw password to frontend responses
+			out := map[string]any{}
+			for k, v := range pref {
+				if k == "password" {
+					continue
+				}
+				out[k] = v
+			}
+			pwd := strings.TrimSpace(fmt.Sprint(pref["password"]))
+			out["has_password"] = pwd != "" && pwd != "<nil>" && pwd != "null"
+			writeJSON(w, 200, map[string]any{"ok": true, "pref": out})
 			return
 		}
 		if r.Method == http.MethodPost {
@@ -479,11 +489,35 @@ func (s *Server) Handler() http.Handler {
 			if name := strings.TrimSpace(fmt.Sprint(payload["name"])); name != "" && name != "<nil>" {
 				data["name"] = name
 			}
+			// optional room password for private VIP rooms (stored only in local runtime_state)
+			if pwd := strings.TrimSpace(fmt.Sprint(payload["password"])); pwd != "" && pwd != "<nil>" && pwd != "null" {
+				data["password"] = pwd
+				data["has_password"] = true
+			} else if hp, ok := payload["has_password"].(bool); ok && hp {
+				// keep previous password if re-selecting without retyping
+				prev := s.st.GetStateMap("vip.room_pref")
+				if prevPwd := strings.TrimSpace(fmt.Sprint(prev["password"])); prevPwd != "" && prevPwd != "<nil>" && fmt.Sprint(prev["room_id"]) == rid {
+					data["password"] = prevPwd
+					data["has_password"] = true
+				} else {
+					data["has_password"] = true
+				}
+			} else {
+				data["has_password"] = false
+			}
 			if err := s.st.SetState("vip.room_pref", data); err != nil {
 				writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error()})
 				return
 			}
-			writeJSON(w, 200, map[string]any{"ok": true, "pref": data})
+			resp := map[string]any{}
+			for k, v := range data {
+				if k == "password" {
+					continue
+				}
+				resp[k] = v
+			}
+			resp["has_password"] = data["has_password"] == true || (strings.TrimSpace(fmt.Sprint(data["password"])) != "" && strings.TrimSpace(fmt.Sprint(data["password"])) != "<nil>")
+			writeJSON(w, 200, map[string]any{"ok": true, "pref": resp})
 			return
 		}
 		writeJSON(w, 405, map[string]any{"error": "method not allowed"})

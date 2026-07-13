@@ -2245,6 +2245,7 @@ async function applyControl(mode){
       auto_underwrite_default_off:'自动承销默认关闭',
       write_path_missing:'写路径缺失',
       vip_gate_not_met:'VIP门槛未满足',
+      vip_password_required:'密码房需要先输入房间密码',
       gate_bypassed:'门槛门控已关闭',
       blocked:'已拦截',
       ready:'可自动',
@@ -2999,14 +3000,15 @@ function renderFeatureFlagPanel(d){
         const players = (r.player_count!=null?r.player_count:(r.players!=null?r.players:'-'));
         const maxp = (r.max_players!=null?r.max_players:'-');
         const base = (r.base_bet_lobster!=null?r.base_bet_lobster:(r.base_bet!=null?r.base_bet:'-'));
-        const pwd = r.has_password ? '有密码' : '公开';
-        const src = (r._source==='manual_pref'?'手动优先': (on && prefId?'已选': '可选'));
+        const needsPwd = !!(r.has_password);
+        const prefHasPwd = !!(info.pref && info.pref.has_password && prefId===id);
+        const pwd = needsPwd ? (prefHasPwd ? '密码房·已保存' : '密码房') : '公开';
         return '<div class="vip-room-item '+(on?'on':'')+'">'
           + '<div><div class="k">房间</div><div class="v">#'+escapeHtml(id)+' · '+escapeHtml(pwd)+'</div></div>'
           + '<div><div class="k">状态</div><div class="v">'+escapeHtml(vipRoomStatusZh(r.status))+'</div></div>'
           + '<div><div class="k">人数/底注</div><div class="v">'+escapeHtml(String(players)+'/'+String(maxp))+' · '+escapeHtml(String(base))+'</div></div>'
           + '<div class="vip-room-actions">'
-          + '<button type="button" onclick="setVipRoomPref(\''+id.replace(/'/g,'')+'\')">选择</button>'
+          + '<button type="button" onclick="setVipRoomPref(\''+id.replace(/'/g,'')+'\','+(needsPwd?'true':'false')+')">选择</button>'
           + (on? '<button type="button" onclick="clearVipRoomPref()">取消</button>' : '')
           + '</div></div>';
       }).join('');
@@ -3023,7 +3025,7 @@ function renderFeatureFlagPanel(d){
       + '</div>'
       + '<div class="earn-note">'+escapeHtml(prefTxt)+' · '+escapeHtml(gateTxt)+'</div>'
       + '<div class="vip-room-list">'+listHtml+'</div>'
-      + '<div class="earn-note">说明：选择只写入本地偏好；未选手动房时 bot 按自动策略选公开房。正式进房/下注仍受 auto_vip 开关、余额门槛与方案B门槛；余额不足不盲进。</div>'
+      + '<div class="earn-note">说明：选择只写入本地偏好；未选手动房时 bot 按自动策略选公开房。正式进房/下注仍受 auto_vip 开关、余额门槛与方案B门槛；密码房需先输入密码；余额不足不盲进。</div>'
       + '</div>';
   }
   function onVipRoomSearch(v){
@@ -3038,19 +3040,31 @@ function renderFeatureFlagPanel(d){
       }
     }catch(e){}
   }
-  async function setVipRoomPref(roomId){
+  async function setVipRoomPref(roomId, needsPassword=false){
     try{
+      let password = '';
+      if(needsPassword){
+        password = window.prompt('该房间需要密码，请输入房间密码（仅保存在本地 bot 偏好，不会显示在页面）', '') || '';
+        password = String(password).trim();
+        if(!password){
+          toast('密码房未输入密码，未保存偏好', 'warn', 'VIP选房');
+          return;
+        }
+      }
+      const body = {room_id: String(roomId), mode:'preferred'};
+      if(password) body.password = password;
+      if(needsPassword) body.has_password = true;
       const r = await fetch('/api/vip/room-pref', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({room_id: String(roomId), mode:'preferred'})
+        body: JSON.stringify(body)
       });
       const j = await r.json();
       if(!r.ok || j.ok===false){
         toast((j&&j.error)||('HTTP '+r.status), 'err', '选房失败');
         return;
       }
-      toast('已选择房间 #'+roomId+'，bot 下轮优先尝试', 'ok', 'VIP选房');
-      // refresh overview
+      const hasPwd = !!(j.pref && j.pref.has_password);
+      toast('已选择房间 #'+roomId+(hasPwd?'（已保存密码）':'')+'，bot 下轮优先尝试', 'ok', 'VIP选房');
       if(typeof refresh==='function'){ refresh(true); } else { location.reload(); }
     }catch(e){ toast(String(e&&e.message||e), 'err', '选房失败'); }
   }
