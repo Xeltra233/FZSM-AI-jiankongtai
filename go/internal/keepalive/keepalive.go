@@ -69,6 +69,17 @@ func Run(cfg *config.Config, st *storage.Storage, c *client.Client, force bool, 
 		}
 	}
 
+	// Always reload cookie file before probe.
+	// Dashboard import writes auth/cookies.json while bot process is already running.
+	cookieReload := map[string]any{"reloaded": false, "count": 0}
+	if cfg != nil && cfg.CookieFile != "" {
+		if n, err := c.LoadCookies(cfg.CookieFile); err != nil {
+			cookieReload = map[string]any{"reloaded": false, "count": 0, "error": err.Error()}
+		} else {
+			cookieReload = map[string]any{"reloaded": true, "count": n, "path": cfg.CookieFile}
+		}
+	}
+
 	stocks := probeStocks(c)
 	lottery := map[string]any{"ok": true, "skipped": true}
 	if probeLottery {
@@ -105,7 +116,7 @@ func Run(cfg *config.Config, st *storage.Storage, c *client.Client, force bool, 
 		"enabled": true, "ok": ok, "degraded": degraded, "ts": now(), "cycle": cycle, "last_cycle": cycle,
 		"every_cycles": every, "probe_lottery": probeLottery, "message": msg,
 		"alert": nil, "stocks": stocks, "lottery": lottery, "cookie_write": cookieWrite,
-		"manual_reauth_hint": nil, "prev_ok": prev["ok"], "impl": "go", "auto": true,
+		"cookie_reload": cookieReload, "manual_reauth_hint": nil, "prev_ok": prev["ok"], "impl": "go", "auto": true,
 	}
 	if !ok {
 		state["manual_reauth_hint"] = "控制 → Cookie 管理：粘贴浏览器 fz_lottery 完整值，点导入并探测"
