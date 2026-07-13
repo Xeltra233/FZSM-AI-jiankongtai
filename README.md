@@ -126,6 +126,8 @@ fz_lottery=完整值
 ### 说明
 
 - Bot 与 Dashboard 共用同一 cookie 文件
+- Cookie 保活是自动的：导入后 bot 会定期探测并回写 cookie
+- 不需要 Python 续登；失效时只需重新导入浏览器 cookie
 - cookie 保活会定期探测 stocks / lottery 登录态
 - 失效后重新按上面步骤从浏览器复制并导入
 - `auth/cookies.json` 是密钥材料，不要提交到 git

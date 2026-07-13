@@ -3306,11 +3306,14 @@ async function applyControl(mode){
       return;
     }
     const ok = !!ka.ok;
+    const degraded = !!ka.degraded;
     const stocks = ka.stocks || {};
     const lottery = ka.lottery || {};
     const tsTxt = ka.ts ? new Date(Number(ka.ts)*1000).toLocaleString() : '-';
-    const badge = ok ? '\u6b63\u5e38' : '\u5931\u6548';
-    const cls = ok ? 'ok' : 'bad';
+    let badge = '\u5931\u6548';
+    let cls = 'bad';
+    if(ok && degraded){ badge = '\u90e8\u5206\u6709\u6548'; cls = 'warn'; }
+    else if(ok){ badge = '\u6b63\u5e38'; cls = 'ok'; }
     let html = '';
     html += '<span class="earn-chip '+cls+'">\u72b6\u6001 \u00b7 '+badge+'</span>';
     html += '<span class="earn-chip">\u65f6\u95f4 \u00b7 '+escapeHtml(String(tsTxt))+'</span>';
@@ -3323,8 +3326,9 @@ async function applyControl(mode){
     if(ka.message){
       html += '<div class="farm-note" style="margin-top:8px;width:100%">'+escapeHtml(String(ka.message))+'</div>';
     }
-    if(!ok && ka.manual_reauth_hint){
-      html += '<div class="farm-note" style="margin-top:4px;width:100%">\u624b\u52a8\u7eed\u767b\uff1a'+escapeHtml(String(ka.manual_reauth_hint))+'</div>';
+    if(ka.manual_reauth_hint){
+      const tip = ok ? '\u7eed\u767b\u63d0\u793a\uff1a' : '\u624b\u52a8\u7eed\u767b\uff1a';
+      html += '<div class="farm-note" style="margin-top:4px;width:100%">'+tip+escapeHtml(String(ka.manual_reauth_hint))+'</div>';
     }
     if(ka.cookie_write && ka.cookie_write.rewrote){
       html += '<div class="farm-note" style="margin-top:4px;width:100%">\u5df2\u56de\u5199 cookie '+escapeHtml(String(ka.cookie_write.count||0))+' \u6761</div>';
