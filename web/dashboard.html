@@ -2008,7 +2008,9 @@ async function applyControl(mode){
       underwriter_list:'承销列表', register_broker:'注册券商', like:'点赞券商',
       suggest_sign_broker:'建议签约券商', events_neutral:'事件情绪中性', news_loaded:'新闻情绪已加载',
       calendar_endpoint_missing_use_events_news:'数据源：事件+新闻（无专用日历接口）',
-      bias:'偏置分析', bias_analyze:'偏置分析', events_loaded:'事件已加载', news_loaded:'新闻已加载', broker_me_loaded:'券商资料已加载', broker_list_loaded:'券商列表已加载', candidates_loaded:'候选人已加载', loan_offers_loaded:'借贷挂单已加载', slot_config_loaded:'老虎机配置已加载', vip_state_loaded:'VIP状态已加载', side_lists_loaded:'侧线列表已加载', public_list_unavailable:'无公开大会列表', holdings_scan_pending:'等待持仓大会扫描', bias_loaded:'榜单偏置已更新',
+      bias:'偏置分析', bias_analyze:'偏置分析', events_loaded:'事件已加载', news_loaded:'新闻已加载', broker_me_loaded:'券商资料已加载', broker_list_loaded:'券商列表已加载', candidates_loaded:'候选人已加载', loan_offers_loaded:'借贷挂单已加载', slot_config_loaded:'老虎机配置已加载',
+      slot_edge_analyzed:'老虎机门槛已分析',
+      routed_to_slot_edge_gate:'已并入老虎机门槛', vip_state_loaded:'VIP状态已加载', side_lists_loaded:'侧线列表已加载', public_list_unavailable:'无公开大会列表', holdings_scan_pending:'等待持仓大会扫描', bias_loaded:'榜单偏置已更新',
       leaderboard_loaded:'排行榜已加载', asset_leaderboard_loaded:'资产榜已加载', farm_rankings_loaded:'农场榜已加载', lottery_leaderboard_today_loaded:'抽奖榜今日已加载', lottery_leaderboard_week_loaded:'抽奖榜本周已加载', lottery_leaderboard_all_loaded:'抽奖榜全部已加载', vip_leaderboard_loaded:'VIP榜已加载',
       honors_me_loaded:'荣誉已加载', no_near_complete:'暂无接近完成',
       vip_title_track:'VIP称号路径', auto_claim:'自动领取',
@@ -2066,7 +2068,7 @@ async function applyControl(mode){
       default_reject_extreme_deposit_unless_forced:'默认拒绝极端保证金，除非强制',
       enabled:'已开启开关',
       theory_negative:'?????????????',
-      insufficient_balance_for_slot_bet:'?????????',
+      insufficient_balance_for_slot_bet:'余额不足老虎机底注',
       no_proven_rtp_edge_in_config:'开关已开，但理论/样本未证明正EV，暂不自动转',
       pending:'等待中',
       skip:'跳过',
@@ -2080,6 +2082,8 @@ async function applyControl(mode){
       loan_root_unavailable_use_offers:'借贷根路径不可用，改用借贷挂单',
       loan_offers_loaded:'借贷挂单已加载',
       slot_config_loaded:'老虎机配置已加载',
+      slot_edge_analyzed:'老虎机门槛已分析',
+      routed_to_slot_edge_gate:'已并入老虎机门槛',
       vip_state_loaded:'VIP状态已加载',
       side_lists_loaded:'侧线列表已加载',
       derivatives_trade_disabled_analyze_only:'期货实盘开关关闭，仅分析',
@@ -2513,7 +2517,34 @@ async function applyControl(mode){
     return s;
   }
   
-  function earnBadgeClass(st){
+    function fmtSlotRtp(v){
+    if(v==null || v==='') return '-';
+    const x = Number(v);
+    if(Number.isNaN(x)) return String(v);
+    return (x*100).toFixed(2)+'%';
+  }
+  function fmtSlotEv(v){
+    if(v==null || v==='') return '-';
+    const x = Number(v);
+    if(Number.isNaN(x)) return String(v);
+    const s = x>=0?'+':'';
+    return s + x.toLocaleString(undefined,{maximumFractionDigits:0});
+  }
+  function slotEdgeNote(edge){
+    if(!edge || typeof edge!=='object') return '老虎机：尚未分析';
+    const gate = edge.gate || '-';
+    const msg = edge.message || '';
+    const samples = edge.samples!=null ? edge.samples : 0;
+    const rtp = fmtSlotRtp(edge.use_rtp!=null?edge.use_rtp:edge.theory_rtp);
+    const ev = fmtSlotEv(edge.use_ev!=null?edge.use_ev:edge.theory_ev_per_spin);
+    if(edge.edge_ok) return '老虎机门槛已通过 · RTP '+rtp+' · EV/把 '+ev+' · 样本 '+samples;
+    if(gate==='theory_negative') return '老虎机理论负期望 · RTP '+rtp+' · EV/把 '+ev+' · 自动转关闭';
+    if(gate==='no_positive_edge') return '老虎机未达正EV · RTP '+rtp+' · EV/把 '+ev+' · 样本 '+samples;
+    if(msg) return '老虎机：'+msg;
+    return '老虎机：RTP '+rtp+' · EV/把 '+ev+' · 样本 '+samples;
+  }
+
+function earnBadgeClass(st){
     st = String(st||'');
     if(st==='ok') return 'ok';
     if(st==='error' || st==='forbidden' || st==='unauthorized') return 'bad';
@@ -2667,17 +2698,26 @@ async function applyControl(mode){
     const cards = [];
 
     // lottery
+    const lotEdge = lotA.slot_edge || lot.slot_edge || {};
+    const lotEdgeGate = lotEdge.gate || (lotEdge.edge_ok ? 'ready' : 'analyze');
+    const lotEdgeBadge = lotEdge.edge_ok ? 'ok' : ((lotEdgeGate==='theory_negative' || lotEdgeGate==='no_positive_edge') ? 'warn' : earnBadgeClass(lot.status));
     cards.push(
       '<div class="earn-card" data-earn="lottery">'
-      + '<div class="eh"><div class="et">抽奖 / VIP / 借贷</div>'
+      + '<div class="eh"><div class="et">抽奖 / VIP / 老虎机</div>'
       + '<span class="badge '+earnBadgeClass(lot.status)+'">'+escapeHtml(zhStatus(lot.status||'-'))+'</span></div>'
       + '<div class="earn-kpis">'
       + kpiBox('免费抽', lotMe.draws_available)
       + kpiBox('高级免费', lotMe.draws_available_premium)
-      + kpiBox('VIP可进', lotVip.can_enter)
-      + kpiBox('借贷挂单', (lotLoan && lotLoan.count!=null)?lotLoan.count:lotLoan)
+      + kpiBox('老虎机RTP', fmtSlotRtp(lotEdge.use_rtp!=null?lotEdge.use_rtp:lotEdge.theory_rtp))
+      + kpiBox('老虎机EV/把', fmtSlotEv(lotEdge.use_ev!=null?lotEdge.use_ev:lotEdge.theory_ev_per_spin))
+      + kpiBox('老虎机样本', lotEdge.samples!=null?lotEdge.samples:0)
+      + kpiBox('门槛', lotEdge.edge_ok ? '可自动转' : (lotEdge.gate==='theory_negative'?'负期望拦截':(lotEdge.gate||'分析中')))
       + '</div>'
-      + '<div class="earn-chips">'+actionChipsHtml(lot.actions,6)+'</div>'
+      + '<div class="earn-chips">'
+      + '<span class="earn-chip '+lotEdgeBadge+'">老虎机 · '+escapeHtml(String(lotEdge.gate||'-'))+' · RTP '+escapeHtml(fmtSlotRtp(lotEdge.use_rtp!=null?lotEdge.use_rtp:lotEdge.theory_rtp))+'</span>'
+      + actionChipsHtml(lot.actions,6)
+      + '</div>'
+      + '<div class="earn-note">'+escapeHtml(slotEdgeNote(lotEdge))+'</div>'
       + '<div class="flag-row">'
       + flagSwitchHtml('lottery.auto_checkin','签到', flagValue(flags,'lottery.auto_checkin',true), 'low')
       + flagSwitchHtml('lottery.auto_draw_free','免费抽', flagValue(flags,'lottery.auto_draw_free',true), 'low')
@@ -2789,7 +2829,7 @@ async function applyControl(mode){
 
     // 内容不变时不重绘整卡，避免自动刷新/切卡闪烁
     setHtmlIfChanged(grid, cards.join(''));
-    setTextIfChanged('earnNote', '赚钱域 5 卡已渲染 · 抽奖免费 ' + shortVal(lotMe.draws_available,8)
+    setTextIfChanged('earnNote', '赚钱域 5 卡已渲染 · 老虎机RTP ' + fmtSlotRtp((lotA.slot_edge||lot.slot_edge||{}).theory_rtp) + ' · 抽奖免费 ' + shortVal(lotMe.draws_available,8)
       + '/' + shortVal(lotMe.draws_available_premium,8)
       + ' · 农场日EV ' + shortVal(farmEv,16)
       + ' · 期货 ' + shortVal(derAct.code||'-',18));
