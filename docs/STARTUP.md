@@ -1,12 +1,17 @@
 # 启动说明（Go-only）
 
 ## 1. 准备 cookie
+
 把业务 cookie 放到 `auth/cookies.json`，通常包含 `fz_lottery`。
 
-也可打开面板后，在 **控制 → Cookie 管理** 中：
-- 直接粘贴 cookie 原值
-- 或粘贴 `name=value` / JSON
-- 再点「导入并探测」
+### 从浏览器拿
+1. 浏览器登录 `https://fanzisima.xyz`
+2. `F12` → Application/应用程序 → Cookies
+3. 找 `fz_lottery`，复制完整 Value
+4. 打开面板 **控制 → Cookie 管理** 粘贴导入
+5. 点「导入并探测」
+
+详细步骤见 `README.md` 的「Cookie 管理」。
 
 ## 2. 启动
 ```bat

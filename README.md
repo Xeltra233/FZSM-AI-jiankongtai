@@ -58,17 +58,78 @@ Dashboard 支持专门登录页：
 
 ## Cookie 管理
 
-业务 cookie 文件：`auth/cookies.json`（通常含 `fz_lottery`）
+业务 cookie 文件：`auth/cookies.json`（通常包含 `fz_lottery`）
 
-控制页支持：
-- 状态查看 / 脱敏列表
-- 导入 / 探测 / 清除
-- 导入格式：
- 1. **直接粘贴 cookie 原值**
- 2. `name=value`
- 3. JSON 数组/对象
+### 从浏览器拿 cookie
 
-Bot 与 Dashboard 共用同一 cookie 文件；保活会探测 stocks/lottery 登录态。
+1. 用浏览器打开并登录目标站：`https://fanzisima.xyz`
+2. 确认你已经登录成功（能看到自己的账户/资产页）
+3. 按 `F12` 打开开发者工具
+4. 切到 **Application / 应用程序**（有的浏览器叫“存储”）
+5. 左侧打开 **Cookies**
+6. 点选站点：`https://fanzisima.xyz` 或 `https://api.fanzisima.xyz`
+7. 在列表里找到 `fz_lottery`
+8. 双击 **Value / 值**，全选复制完整原值
+9. 注意：
+   - 必须复制**完整原值**
+   - 不要复制脱敏后的值（带 `***` / 打码的那种）
+   - 不要只复制一半
+
+### 导入到本项目
+
+#### 方式 A：面板导入（推荐）
+1. 打开监控面板：`http://127.0.0.1:8787/`
+2. 进入 **控制 → Cookie 管理**
+3. 把刚才复制的 cookie 原值粘贴进去
+4. 点 **导入并探测**
+5. 看到探测成功 / 已登录，即可
+
+#### 方式 B：直接写文件
+把 cookie 写到 `auth/cookies.json`，例如：
+
+```json
+[
+  {
+    "name": "fz_lottery",
+    "value": "这里粘贴完整cookie原值",
+    "domain": "fanzisima.xyz",
+    "path": "/"
+  }
+]
+```
+
+### 面板支持的导入格式
+
+1. **直接粘贴 cookie 原值**（最省事）
+```text
+eyJkaXNjb3JkX2lkIjoi....完整值
+```
+默认写入：`name=fz_lottery`，`domain=fanzisima.xyz`，`path=/`
+
+2. `name=value`
+```text
+fz_lottery=完整值
+```
+
+3. JSON
+```json
+[
+  {
+    "name": "fz_lottery",
+    "value": "完整值",
+    "domain": "fanzisima.xyz",
+    "path": "/"
+  }
+]
+```
+
+### 说明
+
+- Bot 与 Dashboard 共用同一 cookie 文件
+- cookie 保活会定期探测 stocks / lottery 登录态
+- 失效后重新按上面步骤从浏览器复制并导入
+- `auth/cookies.json` 是密钥材料，不要提交到 git
+- 更细说明见：`docs/COOKIE_MANAGEMENT.md`
 
 ## 服务器部署：要挂载哪些目录
 
