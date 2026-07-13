@@ -20,5 +20,4 @@ services:
       - ./data:/app/data
       - ./config:/app/config
       - ./logs:/app/logs
-      - ./web:/app/web
     restart: unless-stopped

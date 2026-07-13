@@ -28,17 +28,21 @@ setx FZSM_ADMIN_PASSWORD "你的管理密码"
 ## 4. 服务器挂载（重要）
 服务器 / Docker 不要纠结“挂哪个盘符”，挂这些路径：
 
-### 必挂
+### 必挂（持久数据）
 - `./auth` → `/app/auth`
 - `./data` → `/app/data`
 - `./config` → `/app/config`
 
 ### 建议挂
 - `./logs` → `/app/logs`
-- `./web` → `/app/web`（可选；空卷会自动种子 dashboard.html）
+
+### 不要挂
+- `./web` → `/app/web`
+  前端页面已打进镜像，不是数据。挂空卷只会把面板盖掉。
 
 ### 环境变量
 - `FZSM_ADMIN_PASSWORD=你的管理密码`
+- `PORT=8787`（必须是数字，不要填 `${WEB_PORT}`）
 
 详细说明见 `README.md` 的「服务器部署：要挂载哪些目录」。
 
