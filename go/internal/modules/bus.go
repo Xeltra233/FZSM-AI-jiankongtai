@@ -268,28 +268,51 @@ func asSliceMaps(v any) []map[string]any {
 	return out
 }
 
-func runDerivatives(st *storage.Storage, values map[string]any) map[string]any {
+func runDerivatives(cfg *config.Config, st *storage.Storage, values map[string]any) map[string]any {
 	ds := st.GetStateMap("derivatives")
-	tradeEnabled := flagOn(values, "derivatives.trade_enabled", false)
+	dcfg := map[string]any{}
+	if cfg != nil && cfg.Derivatives != nil {
+		dcfg = cfg.Derivatives
+	}
+	tradeEnabled := flagOn(values, "derivatives.trade_enabled", asBool(dcfg["trade_enabled"], false))
+	edge := evaluateDerivativesEdge(st, dcfg, ds, tradeEnabled)
 	if len(ds) == 0 {
 		status := "analyze_only"
 		if tradeEnabled {
 			status = "idle"
 		}
 		return result("derivatives", "derivatives", status, []map[string]any{{
-			"status": status, "action": "plan", "reason": "derivatives_trade_disabled_analyze_only",
-		}}, map[string]any{"trade_enabled": tradeEnabled}, nil, nil, nil)
+			"status": status, "action": "plan", "reason": "derivatives_trade_disabled_analyze_only", "edge": edge,
+		}}, map[string]any{"trade_enabled": tradeEnabled, "risk_edge": edge}, nil, nil, map[string]any{
+			"trade_enabled": tradeEnabled, "risk_edge": edge,
+		})
 	}
 	status := "ok"
 	if !tradeEnabled {
 		status = "analyze_only"
 	}
-	return result("derivatives", "derivatives", status, asSliceMaps(ds["actions"]), asMap(ds["analysis"]), nil, nil, map[string]any{
-		"trade_enabled": tradeEnabled, "open_margin": ds["open_margin"], "cash": ds["cash"],
+	// even if trade enabled, block auto interpretation when edge not ok
+	if tradeEnabled && !asBool(edge["edge_ok"], false) {
+		status = "analyze_only"
+	}
+	actions := asSliceMaps(ds["actions"])
+	if tradeEnabled && !asBool(edge["edge_ok"], false) {
+		actions = append([]map[string]any{{
+			"status": "skip", "action": "margin_order", "reason": "no_proven_edge", "detail": edge["message"], "edge": edge,
+		}}, actions...)
+	} else if !tradeEnabled {
+		actions = append([]map[string]any{{
+			"status": "analyze_only", "action": "margin_order", "reason": "derivatives_trade_disabled_analyze_only", "edge": edge,
+		}}, actions...)
+	}
+	analysis := asMap(ds["analysis"])
+	analysis["risk_edge"] = edge
+	return result("derivatives", "derivatives", status, actions, analysis, nil, edge["use_ev"], map[string]any{
+		"trade_enabled": tradeEnabled, "open_margin": ds["open_margin"], "cash": ds["cash"], "risk_edge": edge,
 	})
 }
 
-func runBrokers(st *storage.Storage, c *client.Client) map[string]any {
+func runBrokers(st *storage.Storage, c *client.Client, values map[string]any) map[string]any {
 	errors := []string{}
 	me := map[string]any{}
 	list := []any{}
@@ -352,6 +375,24 @@ func runBrokers(st *storage.Storage, c *client.Client) map[string]any {
 	} else {
 		actions = append(actions, map[string]any{"status": "ok", "action": "underwriter_list", "count": len(underwriters)})
 	}
+
+	// Plan-B underwrite edge
+	bcfg := map[string]any{}
+	uwEdge := evaluateUnderwriteEdge(st, bcfg, len(underwriters))
+	stUw := "skip"
+	if asBool(uwEdge["edge_ok"], false) {
+		stUw = "ok"
+	}
+	actions = append(actions, map[string]any{
+		"status": stUw, "action": "underwrite_edge", "edge": uwEdge,
+		"reason": uwEdge["gate"], "detail": uwEdge["message"],
+	})
+	if flagOn(values, "brokers.auto_underwrite", false) && !asBool(uwEdge["edge_ok"], false) {
+		actions = append(actions, map[string]any{
+			"status": "skip", "action": "underwrite", "reason": "no_proven_edge", "edge": uwEdge,
+		})
+	}
+
 	status := "ok"
 	if len(list) == 0 && len(errors) > 0 && len(me) == 0 {
 		status = "error"
@@ -361,6 +402,7 @@ func runBrokers(st *storage.Storage, c *client.Client) map[string]any {
 		"brokers_count":     len(list),
 		"candidates_count":  len(candidates),
 		"underwriter_count": len(underwriters),
+		"underwrite_edge":   uwEdge,
 		"top_brokers":       top,
 		"signed_broker":     signed,
 		"my_candidate":      myCa,
@@ -369,6 +411,7 @@ func runBrokers(st *storage.Storage, c *client.Client) map[string]any {
 	return result("brokers", "券商/选举", status, actions, analysis, errors, map[string]any{
 		"brokers_count":    len(list),
 		"candidates_count": len(candidates),
+		"underwrite_edge":  uwEdge,
 	}, nil)
 }
 
@@ -973,8 +1016,8 @@ func RunAll(cfg *config.Config, st *storage.Storage, c *client.Client, cycle int
 	results["farm"] = runFarmInfo(farm)
 	results["lottery"] = RunLottery(cfg, st, c, values)
 	results["side_hustle"] = runSide(st, c)
-	results["brokers"] = runBrokers(st, c)
-	results["derivatives"] = runDerivatives(st, values)
+	results["brokers"] = runBrokers(st, c, values)
+	results["derivatives"] = runDerivatives(cfg, st, values)
 	results["calendar"] = runCalendar(st, c)
 	results["leaderboard"] = runLeaderboard(st, c, account, userName)
 	results["honors"] = runHonors(st)

@@ -131,6 +131,10 @@ risk:
   # EV / Kelly sizing for profit-max entries
   kelly_fraction: 0.35
   fee_rate: 0.001
+  # Plan B leverage gate
+  min_net_edge: 0
+  min_rtp: 1.0
+  min_samples: 20
 
 storage:
   db_path: "data/bot.db"
@@ -209,6 +213,10 @@ derivatives:
   close_loss_pct: 0.08
   close_any_negative: false
   fee_rate: 0.001
+  # Plan B leverage gate
+  min_net_edge: 0
+  min_rtp: 1.0
+  min_samples: 20
 
 # lottery domain https://api.fanzisima.xyz/lottery/page
 lottery:
@@ -225,6 +233,18 @@ lottery:
   slot_min_rtp: 1.0
   slot_min_ev: 0
   slot_max_spins_per_cycle: 1
+  # other high-risk edges (Plan B)
+  yolo_theory_rtp: 0.95
+  yolo_min_rtp: 1.0
+  yolo_min_ev: 0
+  yolo_min_samples: 50
+  vip_bet_theory_rtp: 0.97
+  vip_bet_theory_ev: -1
+  vip_bet_min_rtp: 1.0
+  vip_bet_min_ev: 0
+  vip_bet_min_samples: 30
+  borrow_min_rtp: 1.0
+  borrow_min_ev: 0
   auto_yolo: false
   auto_nailong: false
   auto_vip: false

@@ -2534,14 +2534,43 @@ async function applyControl(mode){
     if(!edge || typeof edge!=='object') return '老虎机：尚未分析';
     const gate = edge.gate || '-';
     const msg = edge.message || '';
-    const samples = edge.samples!=null ? edge.samples : 0;
-    const rtp = fmtSlotRtp(edge.use_rtp!=null?edge.use_rtp:edge.theory_rtp);
-    const ev = fmtSlotEv(edge.use_ev!=null?edge.use_ev:edge.theory_ev_per_spin);
-    if(edge.edge_ok) return '老虎机门槛已通过 · RTP '+rtp+' · EV/把 '+ev+' · 样本 '+samples;
-    if(gate==='theory_negative') return '老虎机理论负期望 · RTP '+rtp+' · EV/把 '+ev+' · 自动转关闭';
-    if(gate==='no_positive_edge') return '老虎机未达正EV · RTP '+rtp+' · EV/把 '+ev+' · 样本 '+samples;
-    if(msg) return '老虎机：'+msg;
-    return '老虎机：RTP '+rtp+' · EV/把 '+ev+' · 样本 '+samples;
+    const samples = edge.samples!=null ? Number(edge.samples) : 0;
+    const target = edge.sample_target!=null ? Number(edge.sample_target) : (edge.min_samples!=null?Number(edge.min_samples):30);
+    const tRtp = fmtSlotRtp(edge.theory_rtp);
+    const tEv = fmtSlotEv(edge.theory_ev_per_spin);
+    const oRtp = samples>0 ? fmtSlotRtp(edge.obs_rtp) : '-';
+    const oEv = samples>0 ? fmtSlotEv(edge.obs_ev_per_spin) : '-';
+    const wr = (samples>0 && edge.win_rate!=null) ? ((Number(edge.win_rate)*100).toFixed(1)+'%') : '-';
+    const probe = edge.probe_status || (edge.edge_ok?'ready':(gate==='theory_negative'?'blocked':'collecting'));
+    const probeTxt = probe==='ready' ? '可自动转' : (probe==='blocked' ? '理论拦截' : '样本收集中');
+    if(edge.edge_ok) return '老虎机·'+probeTxt+' · 理论RTP '+tRtp+' / EV '+tEv+' · 观察RTP '+oRtp+' / EV '+oEv+' · 样本 '+samples+'/'+target+' · 胜率 '+wr;
+    if(gate==='theory_negative') return '老虎机·'+probeTxt+' · 理论RTP '+tRtp+' / EV '+tEv+' · 观察 '+oRtp+' · 样本 '+samples+'/'+target+' · 不自动转';
+    if(msg) return '老虎机·'+probeTxt+' · '+msg+' · 理论RTP '+tRtp+' · 观察RTP '+oRtp+' · 样本 '+samples+'/'+target;
+    return '老虎机·'+probeTxt+' · 理论RTP '+tRtp+' · 观察RTP '+oRtp+' · 样本 '+samples+'/'+target;
+  }
+
+  function riskEdgeNote(edge, label){
+    const name = label || '高风险';
+    if(!edge || typeof edge!=='object') return name+'：尚未分析';
+    const gate = edge.gate || '-';
+    const samples = edge.samples!=null ? Number(edge.samples) : 0;
+    const target = edge.sample_target!=null ? Number(edge.sample_target) : (edge.min_samples!=null?Number(edge.min_samples):0);
+    const tRtp = fmtSlotRtp(edge.theory_rtp);
+    const tEv = fmtSlotEv(edge.theory_ev!=null?edge.theory_ev:edge.theory_ev_per_spin);
+    const oRtp = samples>0 ? fmtSlotRtp(edge.obs_rtp) : '-';
+    const oEv = samples>0 ? fmtSlotEv(edge.obs_ev!=null?edge.obs_ev:edge.obs_ev_per_spin) : '-';
+    const probe = edge.probe_status || (edge.edge_ok?'ready':(gate==='theory_negative'?'blocked':'collecting'));
+    const probeTxt = probe==='ready' ? '可自动' : (probe==='blocked' ? '拦截' : '收集中');
+    const sampleTxt = target>0 ? (samples+'/'+target) : String(samples);
+    if(edge.message) return name+'·'+probeTxt+' · '+edge.message+' · 理论RTP '+tRtp+' / EV '+tEv+' · 观察 '+oRtp+' · 样本 '+sampleTxt;
+    return name+'·'+probeTxt+' · 理论RTP '+tRtp+' / EV '+tEv+' · 观察 '+oRtp+' · 样本 '+sampleTxt;
+  }
+  function riskEdgeChip(edge, label){
+    if(!edge || typeof edge!=='object') return '<span class="earn-chip">'+(label||'高风险')+' · -</span>';
+    const cls = edge.edge_ok ? 'ok' : ((edge.gate==='theory_negative' || edge.probe_status==='blocked') ? 'warn' : 'warn');
+    const st = edge.probe_status || edge.gate || '-';
+    const tRtp = fmtSlotRtp(edge.theory_rtp);
+    return '<span class="earn-chip '+cls+'">'+escapeHtml(String(label||'高风险'))+' · '+escapeHtml(String(st))+' · 理论 '+escapeHtml(tRtp)+'</span>';
   }
 
 function earnBadgeClass(st){
@@ -2699,6 +2728,9 @@ function earnBadgeClass(st){
 
     // lottery
     const lotEdge = lotA.slot_edge || lot.slot_edge || {};
+    const yoloEdge = lotA.yolo_edge || lot.yolo_edge || {};
+    const vipBetEdge = lotA.vip_bet_edge || lot.vip_bet_edge || {};
+    const borrowEdge = lotA.borrow_edge || lot.borrow_edge || {};
     const lotEdgeGate = lotEdge.gate || (lotEdge.edge_ok ? 'ready' : 'analyze');
     const lotEdgeBadge = lotEdge.edge_ok ? 'ok' : ((lotEdgeGate==='theory_negative' || lotEdgeGate==='no_positive_edge') ? 'warn' : earnBadgeClass(lot.status));
     cards.push(
@@ -2708,16 +2740,24 @@ function earnBadgeClass(st){
       + '<div class="earn-kpis">'
       + kpiBox('免费抽', lotMe.draws_available)
       + kpiBox('高级免费', lotMe.draws_available_premium)
-      + kpiBox('老虎机RTP', fmtSlotRtp(lotEdge.use_rtp!=null?lotEdge.use_rtp:lotEdge.theory_rtp))
-      + kpiBox('老虎机EV/把', fmtSlotEv(lotEdge.use_ev!=null?lotEdge.use_ev:lotEdge.theory_ev_per_spin))
-      + kpiBox('老虎机样本', lotEdge.samples!=null?lotEdge.samples:0)
-      + kpiBox('门槛', lotEdge.edge_ok ? '可自动转' : (lotEdge.gate==='theory_negative'?'负期望拦截':(lotEdge.gate||'分析中')))
+      + kpiBox('理论RTP', fmtSlotRtp(lotEdge.theory_rtp))
+      + kpiBox('理论EV/把', fmtSlotEv(lotEdge.theory_ev_per_spin))
+      + kpiBox('观察RTP', (Number(lotEdge.samples||0)>0 ? fmtSlotRtp(lotEdge.obs_rtp) : '-'))
+      + kpiBox('观察EV/把', (Number(lotEdge.samples||0)>0 ? fmtSlotEv(lotEdge.obs_ev_per_spin) : '-'))
+      + kpiBox('样本', (lotEdge.samples!=null?lotEdge.samples:0) + '/' + (lotEdge.sample_target!=null?lotEdge.sample_target:(lotEdge.min_samples!=null?lotEdge.min_samples:30)))
+      + kpiBox('试探状态', lotEdge.edge_ok ? '可自动转' : (lotEdge.probe_status==='blocked' || lotEdge.gate==='theory_negative' ? '理论拦截' : (lotEdge.probe_status==='collecting' ? '样本收集中' : (lotEdge.gate||'分析中'))))
       + '</div>'
       + '<div class="earn-chips">'
-      + '<span class="earn-chip '+lotEdgeBadge+'">老虎机 · '+escapeHtml(String(lotEdge.gate||'-'))+' · RTP '+escapeHtml(fmtSlotRtp(lotEdge.use_rtp!=null?lotEdge.use_rtp:lotEdge.theory_rtp))+'</span>'
+      + '<span class="earn-chip '+lotEdgeBadge+'">老虎机 · '+escapeHtml(String(lotEdge.probe_status||lotEdge.gate||'-'))+' · 理论 '+escapeHtml(fmtSlotRtp(lotEdge.theory_rtp))+' · 观察 '+(Number(lotEdge.samples||0)>0?escapeHtml(fmtSlotRtp(lotEdge.obs_rtp)):'-')+'</span>'
+      + riskEdgeChip(yoloEdge, '搏一搏')
+      + riskEdgeChip(vipBetEdge, 'VIP下注')
+      + riskEdgeChip(borrowEdge, '借贷')
       + actionChipsHtml(lot.actions,6)
       + '</div>'
       + '<div class="earn-note">'+escapeHtml(slotEdgeNote(lotEdge))+'</div>'
+      + '<div class="earn-note">'+escapeHtml(riskEdgeNote(yoloEdge,'搏一搏'))+'</div>'
+      + '<div class="earn-note">'+escapeHtml(riskEdgeNote(vipBetEdge,'VIP下注'))+'</div>'
+      + '<div class="earn-note">'+escapeHtml(riskEdgeNote(borrowEdge,'借贷'))+'</div>'
       + '<div class="flag-row">'
       + flagSwitchHtml('lottery.auto_checkin','签到', flagValue(flags,'lottery.auto_checkin',true), 'low')
       + flagSwitchHtml('lottery.auto_draw_free','免费抽', flagValue(flags,'lottery.auto_draw_free',true), 'low')
@@ -2759,17 +2799,22 @@ function earnBadgeClass(st){
 
     // derivatives
     const derBest = derA.best || derAct || {};
-    cards.push(
+        const derEdge = (derA.risk_edge || derM.risk_edge || der.risk_edge || {});
+cards.push(
       '<div class="earn-card" data-earn="derivatives">'
       + '<div class="eh"><div class="et">期货 / 保证金</div>'
       + '<span class="badge '+earnBadgeClass(derM.status||derAct.status)+'">'+escapeHtml(zhStatus(derM.status||derAct.status||'-'))+'</span></div>'
       + '<div class="earn-kpis">'
       + kpiBox('计划', derBest.code || derAct.code)
-      + kpiBox('状态', zhStatus(derBest.status || derAct.status))
-      + kpiBox('杠杆', derBest.leverage!=null?derBest.leverage:derAct.leverage)
-      + kpiBox('名义', derBest.notional!=null?derBest.notional:derAct.notional)
+      + kpiBox('杠杆', derBest.leverage!=null?derBest.leverage:(derEdge.leverage!=null?derEdge.leverage:derAct.leverage))
+      + kpiBox('净边EV', fmtSlotEv(derEdge.use_ev!=null?derEdge.use_ev:(derEdge.theory_ev!=null?derEdge.theory_ev:derBest.net_edge)))
+      + kpiBox('门槛', derEdge.edge_ok ? '可实盘' : (derEdge.probe_status==='blocked' || derEdge.gate==='theory_negative' ? '负期望/拦截' : (derEdge.gate||'仅分析')))
       + '</div>'
-      + '<div class="earn-chips">'+actionChipsHtml(der.actions||derM.actions,5)+'</div>'
+      + '<div class="earn-chips">'
+      + riskEdgeChip(derEdge, '期货杠杆')
+      + actionChipsHtml(der.actions||derM.actions,5)
+      + '</div>'
+      + '<div class="earn-note">'+escapeHtml(riskEdgeNote(derEdge,'期货杠杆'))+'</div>'
       + '<div class="flag-row">'+flagSwitchHtml('derivatives.trade_enabled','期货实盘下单', flagValue(flags,'derivatives.trade_enabled', false), 'high')+'</div>'
       + '<div class="earn-note">允许交易 ' + escapeHtml(String(zhBool(flagValue(flags,'derivatives.trade_enabled', der.trade_enabled))))
       + ' · 已开保证金 ' + escapeHtml(shortVal(der.open_margin,16))
@@ -2802,7 +2847,8 @@ function earnBadgeClass(st){
 
     // brokers wide
     const topBrokers = Array.isArray(broA.top_brokers) ? broA.top_brokers : [];
-    cards.push(
+        const uwEdge = (broA.underwrite_edge || bro.underwrite_edge || ((bro.ev||{}).underwrite_edge) || {});
+cards.push(
       '<div class="earn-card wide" data-earn="brokers">'
       + '<div class="eh"><div class="et">券商 / 选举 / 承销</div>'
       + '<span class="badge '+earnBadgeClass(bro.status)+'">'+escapeHtml(zhStatus(bro.status||'-'))+'</span></div>'
@@ -2812,7 +2858,11 @@ function earnBadgeClass(st){
       + kpiBox('承销单', broA.underwriter_count)
       + kpiBox('注册保证金', (bro.ev||{}).registration_deposit)
       + '</div>'
-      + '<div class="earn-chips">'+actionChipsHtml(bro.actions,6)+'</div>'
+      + '<div class="earn-chips">'
+      + riskEdgeChip(uwEdge, '承销')
+      + actionChipsHtml(bro.actions,6)
+      + '</div>'
+      + '<div class="earn-note">'+escapeHtml(riskEdgeNote(uwEdge,'承销'))+'</div>'
       + '<div class="earn-list">'
       + (topBrokers.slice(0,4).map(b => {
           return '<div class="earn-row"><div>'+escapeHtml(String(b.name||b.id||'券商'))+'</div><div>点赞 ' + escapeHtml(shortVal(b.likes!=null?b.likes:b.like_count,12)) + '</div><div>'+escapeHtml(shortVal(b.deposit!=null?b.deposit:b.score,16))+'</div></div>';
@@ -2829,7 +2879,7 @@ function earnBadgeClass(st){
 
     // 内容不变时不重绘整卡，避免自动刷新/切卡闪烁
     setHtmlIfChanged(grid, cards.join(''));
-    setTextIfChanged('earnNote', '赚钱域 5 卡已渲染 · 老虎机RTP ' + fmtSlotRtp((lotA.slot_edge||lot.slot_edge||{}).theory_rtp) + ' · 抽奖免费 ' + shortVal(lotMe.draws_available,8)
+    setTextIfChanged('earnNote', '赚钱域 5 卡已渲染 · 老虎机理论RTP ' + fmtSlotRtp((lotA.slot_edge||lot.slot_edge||{}).theory_rtp) + ' / 观察 ' + (Number(((lotA.slot_edge||lot.slot_edge||{}).samples)||0)>0?fmtSlotRtp((lotA.slot_edge||lot.slot_edge||{}).obs_rtp):'-') + ' · 样本 ' + shortVal(((lotA.slot_edge||lot.slot_edge||{}).samples)||0,8) + ' · 抽奖免费 ' + shortVal(lotMe.draws_available,8)
       + '/' + shortVal(lotMe.draws_available_premium,8)
       + ' · 农场日EV ' + shortVal(farmEv,16)
       + ' · 期货 ' + shortVal(derAct.code||'-',18));

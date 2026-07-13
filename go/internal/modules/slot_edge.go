@@ -211,24 +211,33 @@ func updateSlotEdge(st *storage.Storage, lcfg map[string]any, slotCfg map[string
 	}
 	if !asBool(theory["ok"], false) {
 		edge["gate"] = "need_slot_config"
-		edge["message"] = "???????????? RTP"
-	} else if !edgeOK {
-		edge["gate"] = "no_positive_edge"
-		edge["message"] = fmt.Sprintf("??RTP=%.2f%% EV/?=%.0f????? RTP>=%.0f%% ? EV>=%.0f", theoryRTP*100, theoryEV, minRTP*100, minEV)
-	} else if samples < minSamples {
-		// theory already positive but wait for samples if configured strictly
-		// For B: if theory alone proves edge, allow; samples are bonus.
-		edge["gate"] = "ready"
-		edge["message"] = fmt.Sprintf("?????? RTP=%.2f%% EV/?=%.0f?????", theoryRTP*100, theoryEV)
-	} else {
-		edge["gate"] = "ready"
-		edge["message"] = fmt.Sprintf("??=%d ??RTP=%.2f%% EV/?=%.0f?????", samples, useRTP*100, useEV)
-	}
-	// If theory negative, never ready.
-	if asBool(theory["ok"], false) && (theoryRTP < minRTP || theoryEV < minEV) {
+		edge["message"] = "缺少老虎机配置，无法计算 RTP"
+		edge["probe_status"] = "blocked"
+	} else if theoryRTP < minRTP || theoryEV < minEV {
+		// hard stop on negative theory regardless of samples
 		edge["edge_ok"] = false
 		edge["gate"] = "theory_negative"
-		edge["message"] = fmt.Sprintf("??????RTP=%.2f%% EV/?=%.0f????????", theoryRTP*100, theoryEV)
+		edge["message"] = fmt.Sprintf("理论负期望：RTP=%.2f%% EV/把=%.0f，自动转保持关闭", theoryRTP*100, theoryEV)
+		edge["probe_status"] = "blocked"
+	} else if !edgeOK {
+		edge["gate"] = "no_positive_edge"
+		edge["message"] = fmt.Sprintf("未达正EV：RTP=%.2f%% EV/把=%.0f，门槛 RTP>=%.0f%% 且 EV>=%.0f", useRTP*100, useEV, minRTP*100, minEV)
+		edge["probe_status"] = "collecting"
+	} else if samples < minSamples {
+		// theory already positive; samples are bonus
+		edge["gate"] = "ready"
+		edge["message"] = fmt.Sprintf("理论优势成立 RTP=%.2f%% EV/把=%.0f，可自动转（样本 %d/%d）", theoryRTP*100, theoryEV, samples, minSamples)
+		edge["probe_status"] = "ready"
+	} else {
+		edge["gate"] = "ready"
+		edge["message"] = fmt.Sprintf("样本=%d 综合RTP=%.2f%% EV/把=%.0f，可自动转", samples, useRTP*100, useEV)
+		edge["probe_status"] = "ready"
+	}
+	// keep explicit observed summary fields for UI
+	edge["sample_target"] = minSamples
+	edge["win_rate"] = 0.0
+	if samples > 0 {
+		edge["win_rate"] = float64(wins) / float64(samples)
 	}
 	saveSlotEdge(st, edge)
 	return edge
