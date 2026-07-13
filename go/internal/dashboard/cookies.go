@@ -1,0 +1,664 @@
+package dashboard
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"fzsmbot/internal/client"
+)
+
+const (
+	adminTokenEnv     = "FZSM_ADMIN_TOKEN"
+	maxCookieBodySize = 1 << 20 // 1 MiB
+	maxCookieItems    = 50
+)
+
+func (s *Server) cookiePath() string {
+	p := ""
+	if s.cfg != nil {
+		p = strings.TrimSpace(s.cfg.CookieFile)
+	}
+	if p == "" {
+		p = "auth/cookies.json"
+	}
+	return p
+}
+
+func (s *Server) lotteryBase() string {
+	return "https://api.fanzisima.xyz"
+}
+
+func adminToken() string {
+	return strings.TrimSpace(os.Getenv(adminTokenEnv))
+}
+
+
+
+func maskCookieValue(v string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return ""
+	}
+	if len(v) <= 8 {
+		return "****"
+	}
+	return v[:4] + "…" + v[len(v)-4:] + fmt.Sprintf("（%d字）", len(v))
+}
+
+func parseCookieItems(raw any) ([]client.CookieItem, error) {
+	items := []client.CookieItem{}
+	switch t := raw.(type) {
+	case []any:
+		for _, it := range t {
+			m, ok := it.(map[string]any)
+			if !ok {
+				continue
+			}
+			items = append(items, cookieItemFromMap(m))
+		}
+	case map[string]any:
+		if arr, ok := t["cookies"].([]any); ok {
+			for _, it := range arr {
+				m, ok := it.(map[string]any)
+				if !ok {
+					continue
+				}
+				items = append(items, cookieItemFromMap(m))
+			}
+		} else if name := strings.TrimSpace(fmt.Sprint(t["name"])); name != "" && name != "<nil>" {
+			items = append(items, cookieItemFromMap(t))
+		} else {
+			return nil, fmt.Errorf("无法识别 cookie JSON：需要数组或 {cookies:[...]}")
+		}
+	default:
+		return nil, fmt.Errorf("无法识别 cookie JSON 类型")
+	}
+	out := make([]client.CookieItem, 0, len(items))
+	for _, it := range items {
+		name := strings.TrimSpace(it.Name)
+		val := strings.TrimSpace(it.Value)
+		if name == "" || val == "" || name == "<nil>" || val == "<nil>" {
+			continue
+		}
+		if it.Path == "" || it.Path == "<nil>" {
+			it.Path = "/"
+		}
+		if it.Domain == "" || it.Domain == "<nil>" {
+			it.Domain = "fanzisima.xyz"
+		}
+		it.Name = name
+		it.Value = val
+		out = append(out, it)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("没有有效 cookie（需要 name 与 value）")
+	}
+	if len(out) > maxCookieItems {
+		return nil, fmt.Errorf("cookie 条数过多（最多 %d）", maxCookieItems)
+	}
+	return out, nil
+}
+
+func cookieItemFromMap(m map[string]any) client.CookieItem {
+	return client.CookieItem{
+		Name:     strings.TrimSpace(fmt.Sprint(m["name"])),
+		Value:    strings.TrimSpace(fmt.Sprint(m["value"])),
+		Domain:   strings.TrimSpace(fmt.Sprint(m["domain"])),
+		Path:     strings.TrimSpace(fmt.Sprint(m["path"])),
+		Secure:   asBoolAny(m["secure"]),
+		HTTPOnly: asBoolAny(m["httpOnly"]) || asBoolAny(m["http_only"]),
+	}
+}
+
+func asBoolAny(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return t == "1" || strings.EqualFold(t, "true") || strings.EqualFold(t, "on")
+	case float64:
+		return t != 0
+	default:
+		return false
+	}
+}
+
+func readCookieFile(path string) ([]client.CookieItem, map[string]any, error) {
+	info := map[string]any{
+		"path":   path,
+		"exists": false,
+		"count":  0,
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []client.CookieItem{}, info, nil
+		}
+		return nil, info, err
+	}
+	info["exists"] = true
+	info["size"] = st.Size()
+	info["mtime"] = st.ModTime().Unix()
+	info["mtime_text"] = st.ModTime().Format("2006-01-02 15:04:05")
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, info, err
+	}
+	if len(strings.TrimSpace(string(b))) == 0 {
+		return []client.CookieItem{}, info, nil
+	}
+	var raw any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return nil, info, fmt.Errorf("cookie 文件 JSON 无效: %w", err)
+	}
+	items, err := parseCookieItems(raw)
+	if err != nil {
+		if arr, ok := raw.([]any); ok && len(arr) == 0 {
+			info["count"] = 0
+			return []client.CookieItem{}, info, nil
+		}
+		return nil, info, err
+	}
+	info["count"] = len(items)
+	return items, info, nil
+}
+
+func writeCookieFile(path string, items []client.CookieItem) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if items == nil {
+		items = []client.CookieItem{}
+	}
+	b, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o644)
+}
+
+func backupCookieFile(path string) (string, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if st.Size() == 0 {
+		return "", nil
+	}
+	dir := filepath.Dir(path)
+	name := fmt.Sprintf("cookies.backup.%d.json", time.Now().Unix())
+	dst := filepath.Join(dir, name)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(dst, b, 0o644); err != nil {
+		return "", err
+	}
+	return dst, nil
+}
+
+func maskedCookieList(items []client.CookieItem) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		out = append(out, map[string]any{
+			"name":     it.Name,
+			"domain":   it.Domain,
+			"path":     it.Path,
+			"secure":   it.Secure,
+			"httpOnly": it.HTTPOnly,
+			"value":    maskCookieValue(it.Value),
+			"masked":   true,
+		})
+	}
+	return out
+}
+
+func fullCookieList(items []client.CookieItem) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		out = append(out, map[string]any{
+			"name":     it.Name,
+			"domain":   it.Domain,
+			"path":     it.Path,
+			"secure":   it.Secure,
+			"httpOnly": it.HTTPOnly,
+			"value":    it.Value,
+			"masked":   false,
+		})
+	}
+	return out
+}
+
+func (s *Server) newCookieClient() (*client.Client, error) {
+	apiBase := "https://fanzisima.xyz/stocks/api"
+	if s.cfg != nil && strings.TrimSpace(s.cfg.APIBase) != "" {
+		apiBase = s.cfg.APIBase
+	}
+	return client.New(apiBase, s.lotteryBase(), s.cookiePath())
+}
+
+func probeCookieAuth(c *client.Client) map[string]any {
+	out := map[string]any{
+		"ts": time.Now().Unix(),
+	}
+	t0 := time.Now()
+	stocks := map[string]any{"ok": false}
+	if me, err := c.StocksMe(); err != nil {
+		stocks["ok"] = false
+		stocks["error"] = err.Error()
+		stocks["latency_ms"] = int(time.Since(t0).Milliseconds())
+	} else {
+		status := int(asFloat(me["_http_status"]))
+		ok := status > 0 && status < 400 && me != nil && (me["balance_lobster"] != nil || me["user"] != nil || me["total_asset_lobster"] != nil || len(me) > 1)
+		userName := ""
+		if u, okm := me["user"].(map[string]any); okm && u != nil {
+			userName = firstNonEmpty(asString(u["display_name"]), asString(u["username"]), asString(u["global_name"]))
+		}
+		stocks = map[string]any{
+			"ok":         ok,
+			"status":     status,
+			"latency_ms": int(time.Since(t0).Milliseconds()),
+			"user":       userName,
+			"balance":    me["balance_lobster"],
+			"equity":     me["total_asset_lobster"],
+		}
+		if !ok {
+			stocks["error"] = fmt.Sprintf("stocks /me status=%d", status)
+		}
+	}
+	t1 := time.Now()
+	lottery := map[string]any{"ok": false}
+	if me, err := c.LotteryMe(); err != nil {
+		lottery["ok"] = false
+		lottery["error"] = err.Error()
+		lottery["latency_ms"] = int(time.Since(t1).Milliseconds())
+	} else {
+		status := int(asFloat(me["_http_status"]))
+		ok := me != nil && len(me) > 0 && status < 400
+		lottery = map[string]any{
+			"ok":         ok,
+			"status":     status,
+			"latency_ms": int(time.Since(t1).Milliseconds()),
+			"free_draws": me["draws_available"],
+			"balance":    firstNonEmptyAny(me["remaining_lobster"], me["balance"]),
+		}
+		if !ok {
+			lottery["error"] = fmt.Sprintf("lottery /me status=%d", status)
+		}
+	}
+	ok := asBoolAny(stocks["ok"]) && asBoolAny(lottery["ok"])
+	msg := "探测成功：股市与抽奖均已登录"
+	if asBoolAny(stocks["ok"]) && !asBoolAny(lottery["ok"]) {
+		msg = "股市已登录，抽奖探测失败"
+	} else if !asBoolAny(stocks["ok"]) && asBoolAny(lottery["ok"]) {
+		msg = "抽奖已登录，股市探测失败"
+	} else if !ok {
+		msg = "探测失败：需要重新导入有效 cookie"
+	}
+	out["ok"] = ok
+	out["message"] = msg
+	out["stocks"] = stocks
+	out["lottery"] = lottery
+	return out
+}
+
+func firstNonEmptyAny(xs ...any) any {
+	for _, x := range xs {
+		if x == nil {
+			continue
+		}
+		s := strings.TrimSpace(fmt.Sprint(x))
+		if s != "" && s != "<nil>" {
+			return x
+		}
+	}
+	return nil
+}
+
+
+func decodeCookieImportBody(r *http.Request) (any, error) {
+	defer r.Body.Close()
+	limited := io.LimitReader(r.Body, maxCookieBodySize+1)
+	b, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxCookieBodySize {
+		return nil, fmt.Errorf("请求体过大（上限 1MB）")
+	}
+	s := strings.TrimSpace(string(b))
+	if s == "" {
+		return nil, fmt.Errorf("请求体为空")
+	}
+
+	// 允许 {text|raw|json|content|value: "..."} 包装
+	var asMap map[string]any
+	if err := json.Unmarshal(b, &asMap); err == nil {
+		for _, k := range []string{"raw", "text", "json", "content", "value", "cookie", "cookie_value"} {
+			if v, ok := asMap[k]; ok {
+				inner := strings.TrimSpace(fmt.Sprint(v))
+				if inner != "" && inner != "<nil>" {
+					return parseFlexibleCookieInput(inner)
+				}
+			}
+		}
+		if _, ok := asMap["cookies"]; ok {
+			return asMap, nil
+		}
+		if _, ok := asMap["name"]; ok {
+			return asMap, nil
+		}
+	}
+
+	return parseFlexibleCookieInput(s)
+}
+
+// parseFlexibleCookieInput 支持：
+// 1) JSON 数组/对象
+// 2) name=value; 其他cookie=...
+// 3) 直接粘贴单个 cookie value（默认 name=fz_lottery）
+func parseFlexibleCookieInput(s string) (any, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, fmt.Errorf("内容为空")
+	}
+	// JSON first
+	var raw any
+	if err := json.Unmarshal([]byte(s), &raw); err == nil {
+		return raw, nil
+	}
+	// cookie header style: a=b; c=d
+	if strings.Contains(s, "=") && !strings.HasPrefix(s, "{") && !strings.HasPrefix(s, "[") {
+		parts := strings.Split(s, ";")
+		items := make([]any, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			name, val, ok := strings.Cut(p, "=")
+			name = strings.TrimSpace(name)
+			val = strings.TrimSpace(val)
+			if !ok || name == "" || val == "" {
+				continue
+			}
+			// skip attributes
+			ln := strings.ToLower(name)
+			if ln == "path" || ln == "domain" || ln == "expires" || ln == "max-age" || ln == "secure" || ln == "httponly" || ln == "samesite" {
+				continue
+			}
+			items = append(items, map[string]any{
+				"name": name, "value": val, "domain": "fanzisima.xyz", "path": "/",
+			})
+		}
+		if len(items) > 0 {
+			return items, nil
+		}
+	}
+	// bare token/value only
+	if looksLikeCookieValue(s) {
+		return []any{map[string]any{
+			"name": "fz_lottery", "value": s, "domain": "fanzisima.xyz", "path": "/",
+		}}, nil
+	}
+	return nil, fmt.Errorf("无法识别内容：请粘贴 JSON、name=value，或直接粘贴 cookie 原值")
+}
+
+func looksLikeCookieValue(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 16 {
+		return false
+	}
+	// reject obvious sentences
+	if strings.ContainsAny(s, " \t\r\n") {
+		return false
+	}
+	// common jwt/token chars
+	for _, ch := range s {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || strings.ContainsRune("._-+=/", ch) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+
+func (s *Server) handleCookieStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, 405, map[string]any{"ok": false, "error": "方法不允许"})
+		return
+	}
+	path := s.cookiePath()
+	items, info, err := readCookieFile(path)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{
+			"ok": false, "error": err.Error(), "message": "读取 cookie 失败",
+			"path": path, "auth_mode": adminAuthMode(),
+		})
+		return
+	}
+	ka := asMap(sanitize(s.st.GetStateMap("auth_keepalive")))
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		names = append(names, it.Name)
+	}
+	loggedIn := true
+	if adminAuthRequired() {
+		loggedIn = sessionValid(readSessionToken(r))
+	}
+	writeJSON(w, 200, map[string]any{
+		"ok":              true,
+		"path":            path,
+		"exists":          info["exists"],
+		"count":           len(items),
+		"size":            info["size"],
+		"mtime":           info["mtime"],
+		"mtime_text":      info["mtime_text"],
+		"auth_mode":       adminAuthMode(),
+		"admin_token_set": adminAuthRequired(),
+		"login_required":  adminAuthRequired(),
+		"logged_in":       loggedIn,
+		"auth_keepalive": map[string]any{
+			"ok":      ka["ok"],
+			"ts":      ka["ts"],
+			"message": ka["message"],
+			"enabled": ka["enabled"],
+		},
+		"names":   names,
+		"message": "cookie 状态已加载",
+	})
+}
+
+func (s *Server) handleCookieList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, 405, map[string]any{"ok": false, "error": "方法不允许"})
+		return
+	}
+	path := s.cookiePath()
+	items, info, err := readCookieFile(path)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error(), "message": "读取 cookie 失败"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"ok":        true,
+		"path":      path,
+		"count":     len(items),
+		"exists":    info["exists"],
+		"mtime":     info["mtime"],
+		"cookies":   maskedCookieList(items),
+		"masked":    true,
+		"auth_mode": adminAuthMode(),
+		"message":   "已返回脱敏 cookie 列表",
+	})
+}
+
+func (s *Server) handleCookieExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, 405, map[string]any{"ok": false, "error": "方法不允许"})
+		return
+	}
+	if !requireAdmin(w, r) {
+		return
+	}
+	path := s.cookiePath()
+	items, _, err := readCookieFile(path)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error(), "message": "导出失败"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"ok":        true,
+		"path":      path,
+		"count":     len(items),
+		"cookies":   fullCookieList(items),
+		"masked":    false,
+		"auth_mode": adminAuthMode(),
+		"message":   "已导出完整 cookie（请勿分享或提交到 git）",
+		"warning":   "包含明文密钥材料，仅限安全环境使用",
+	})
+}
+
+func (s *Server) handleCookieImport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]any{"ok": false, "error": "方法不允许"})
+		return
+	}
+	if !requireAdmin(w, r) {
+		return
+	}
+	raw, err := decodeCookieImportBody(r)
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"ok": false, "error": err.Error(), "message": "导入内容无效"})
+		return
+	}
+	items, err := parseCookieItems(raw)
+	if err != nil {
+		writeJSON(w, 400, map[string]any{"ok": false, "error": err.Error(), "message": "导入校验失败"})
+		return
+	}
+	path := s.cookiePath()
+	backup, berr := backupCookieFile(path)
+	if berr != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": berr.Error(), "message": "备份失败，已中止导入"})
+		return
+	}
+	if err := writeCookieFile(path, items); err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error(), "message": "写入 cookie 失败"})
+		return
+	}
+
+	doProbe := true
+	if q := strings.TrimSpace(r.URL.Query().Get("probe")); q == "0" || strings.EqualFold(q, "false") {
+		doProbe = false
+	}
+	msg := fmt.Sprintf("已导入 %d 条 cookie", len(items))
+	resp := map[string]any{
+		"ok":        true,
+		"path":      path,
+		"count":     len(items),
+		"backup":    backup,
+		"cookies":   maskedCookieList(items),
+		"auth_mode": adminAuthMode(),
+		"message":   msg,
+	}
+	if doProbe {
+		c, err := s.newCookieClient()
+		if err != nil {
+			resp["probe"] = map[string]any{"ok": false, "error": err.Error()}
+			resp["message"] = msg + "；探测客户端创建失败"
+		} else {
+			probe := probeCookieAuth(c)
+			resp["probe"] = probe
+			if !asBoolAny(probe["ok"]) {
+				resp["message"] = msg + "；探测未完全通过"
+			} else {
+				resp["message"] = msg + "；探测通过"
+			}
+		}
+	}
+	writeJSON(w, 200, resp)
+}
+
+func (s *Server) handleCookieProbe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+		writeJSON(w, 405, map[string]any{"ok": false, "error": "方法不允许"})
+		return
+	}
+	if !requireAdmin(w, r) {
+		return
+	}
+	path := s.cookiePath()
+	items, info, err := readCookieFile(path)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error(), "message": "读取 cookie 失败"})
+		return
+	}
+	if len(items) == 0 {
+		writeJSON(w, 200, map[string]any{
+			"ok":        false,
+			"path":      path,
+			"exists":    info["exists"],
+			"count":     0,
+			"message":   "没有可探测的 cookie",
+			"probe":     map[string]any{"ok": false, "message": "cookie 为空"},
+			"auth_mode": adminAuthMode(),
+		})
+		return
+	}
+	c, err := s.newCookieClient()
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error(), "message": "创建客户端失败"})
+		return
+	}
+	probe := probeCookieAuth(c)
+	writeJSON(w, 200, map[string]any{
+		"ok":        asBoolAny(probe["ok"]),
+		"path":      path,
+		"count":     len(items),
+		"probe":     probe,
+		"auth_mode": adminAuthMode(),
+		"message":   probe["message"],
+	})
+}
+
+func (s *Server) handleCookieClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, 405, map[string]any{"ok": false, "error": "方法不允许"})
+		return
+	}
+	if !requireAdmin(w, r) {
+		return
+	}
+	path := s.cookiePath()
+	backup, err := backupCookieFile(path)
+	if err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error(), "message": "备份失败，已中止清除"})
+		return
+	}
+	if err := writeCookieFile(path, []client.CookieItem{}); err != nil {
+		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error(), "message": "清除失败"})
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"ok":        true,
+		"path":      path,
+		"count":     0,
+		"backup":    backup,
+		"auth_mode": adminAuthMode(),
+		"message":   "已清除 cookie（如有原文件已备份）",
+		"warning":   "bot 下一轮可能掉登录，请尽快重新导入",
+	})
+}

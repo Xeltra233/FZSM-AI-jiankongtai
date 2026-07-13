@@ -1,0 +1,46 @@
+﻿# secrets / local runtime
+auth/cookies.json
+auth/cookies.backup.*.json
+auth/browser-profile/
+data/*.db
+data/*.db-*
+data/*.pid
+data/service_state.json
+logs/
+*.exe~
+.env
+.FZSM_*
+
+# dependencies / build artifacts
+node_modules/
+bin/*.exe
+bin/*.exe~
+go/data/
+*.log
+
+# local research / temp probes / screenshots / goal worklogs
+_research/
+_patch_parts/
+shots/
+web/shots/
+goal-*/
+goal-*/**
+goal-*/evidence/
+goal-*/**/*.log
+goal-*/**/*.db
+goal-*/**/*.zip
+_*.py
+_*.js
+_*.json
+!package.json
+!package-lock.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# cookie exports / dumps
+*cookies*.json
+fanzisima*.json

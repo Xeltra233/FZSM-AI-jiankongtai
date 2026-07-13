@@ -1,0 +1,3963 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FZSM AI 监控台</title>
+  <style>
+    :root {
+      --bg0:#03050b;
+      --bg1:#081124;
+      --bg2:#0b1830;
+      --glass:rgba(255,255,255,.075);
+      --glass2:rgba(255,255,255,.11);
+      --glass3:rgba(8,14,28,.38);
+      --line:rgba(190,220,255,.18);
+      --line2:rgba(190,220,255,.30);
+      --text:#f5f8ff;
+      --muted:#9eb1d2;
+      --good:#3dffb0;
+      --bad:#ff6b8a;
+      --warn:#ffd166;
+      --accent:#7eb6ff;
+      --accent2:#b39cfa;
+      --shadow:0 20px 55px rgba(0,0,0,.42), 0 2px 0 rgba(255,255,255,.03) inset;
+      --shadow2:0 12px 28px rgba(0,0,0,.28);
+      --radius:22px;
+      --blur:22px;
+      --highlight:inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(255,255,255,.04);
+    }
+    *{box-sizing:border-box}
+    /* continuous page backdrop via fixed viewport layer (no height:100% clip / scroll seam) */
+    html,body{
+      overflow-x:hidden;
+      margin:0;
+      min-height:100%;
+      min-height:100vh;
+      background-color:var(--bg2);
+    }
+    body{
+      color:var(--text);
+      font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+      background:transparent;
+      overflow-x:hidden;
+      position:relative;
+    }
+    /* fixed full-viewport paint layer: always covers scroll position */
+    html::before{
+      content:"";
+      position:fixed;
+      inset:0;
+      z-index:-2;
+      pointer-events:none;
+      background-color:var(--bg2);
+      background-image:
+        radial-gradient(1100px 560px at 8% 8%, rgba(104,164,255,.38), transparent 58%),
+        radial-gradient(900px 500px at 96% 12%, rgba(176,132,255,.28), transparent 54%),
+        radial-gradient(820px 520px at 48% 92%, rgba(61,255,176,.14), transparent 58%),
+        radial-gradient(560px 360px at 72% 42%, rgba(255,107,203,.09), transparent 62%),
+        linear-gradient(180deg,var(--bg0),var(--bg1) 46%, var(--bg2));
+      background-repeat:no-repeat;
+      background-size:cover;
+    }
+    /* ambient orbs stay viewport-locked above paint layer */
+    body::before,
+    body::after{
+      content:"";
+      position:fixed;
+      z-index:-1;
+      pointer-events:none;
+      border-radius:50%;
+      filter:blur(2px);
+      opacity:.95;
+    }
+    body::before{
+      width:520px;height:520px;left:-150px;top:12%;
+      background:
+        radial-gradient(circle at 35% 35%, rgba(150,200,255,.34), transparent 42%),
+        radial-gradient(circle, rgba(110,168,255,.20), transparent 70%);
+      animation:floatA 16s ease-in-out infinite alternate;
+    }
+    body::after{
+      width:460px;height:460px;right:-120px;bottom:8%;
+      background:
+        radial-gradient(circle at 60% 40%, rgba(196,160,255,.30), transparent 44%),
+        radial-gradient(circle, rgba(167,139,250,.18), transparent 70%);
+      animation:floatB 18s ease-in-out infinite alternate;
+    }
+    @keyframes floatA{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(28px,18px,0) scale(1.05)}}
+    @keyframes floatB{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-22px,-16px,0) scale(1.08)}}
+    .shell{
+      position:relative;z-index:1;
+      max-width:1480px;margin:0 auto;padding:12px;
+      height:100vh; max-height:100vh;
+      display:flex;flex-direction:row;gap:12px;align-items:stretch;
+      overflow:hidden;
+      box-sizing:border-box;
+    }
+    .sidebar{
+      position:relative; /* 桌面端不随右侧滚动：由 shell 固定高度 + 仅 main 滚动 */
+      top:auto; align-self:stretch;
+      width:86px; min-width:86px; height:auto; max-height:none;
+      display:flex; flex-direction:column; gap:8px;
+      padding:10px 8px; border-radius:22px;
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.14), rgba(255,255,255,.04) 42%, rgba(255,255,255,.02)),
+        linear-gradient(180deg, rgba(255,255,255,.05), transparent 40%),
+        var(--glass3);
+      border:1px solid var(--line);
+      box-shadow:var(--shadow), var(--highlight);
+      backdrop-filter:blur(var(--blur)) saturate(165%);
+      -webkit-backdrop-filter:blur(var(--blur)) saturate(165%);
+      overflow-x:hidden;overflow-y:auto;
+      flex:0 0 auto;
+    }
+    .sidebar .side-brand{
+      display:grid; place-items:center; gap:4px; padding:6px 4px 10px; border-bottom:1px solid rgba(210,230,255,.12); margin-bottom:4px
+    }
+    .sidebar .side-brand .logo{
+      width:42px;height:42px;border-radius:14px;display:grid;place-items:center;
+      font-weight:800; letter-spacing:.5px;
+      background:linear-gradient(145deg, rgba(126,182,255,.35), rgba(179,156,250,.18));
+      border:1px solid rgba(210,230,255,.22);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.25);
+    }
+    .sidebar .side-brand .mini{color:var(--muted);font-size:10px;font-weight:700}
+    .side-nav{display:flex;flex-direction:column;gap:6px}
+    .side-nav .tab{
+      width:100%; border:0; cursor:pointer; color:var(--muted);
+      background:transparent; border-radius:14px; padding:10px 6px;
+      display:flex; flex-direction:column; align-items:center; gap:4px;
+      transition: .15s ease; position:relative;
+    }
+    .side-nav .tab:hover{color:var(--text); background:rgba(255,255,255,.06)}
+    .side-nav .tab.on{
+      color:var(--text);
+      background:
+        linear-gradient(160deg, rgba(126,182,255,.22), rgba(255,255,255,.04));
+      box-shadow:inset 0 0 0 1px rgba(126,182,255,.28), inset 0 1px 0 rgba(255,255,255,.18);
+    }
+    .side-nav .tab .ico{font-size:16px; line-height:1}
+    .side-nav .tab .lbl{font-size:11px; font-weight:750}
+    .side-nav .tab .kbd{opacity:.55; font-size:10px}
+    .side-nav .tab.on::before{
+      content:""; position:absolute; left:0; top:18%; bottom:18%; width:3px; border-radius:0 3px 3px 0;
+      background:linear-gradient(180deg, #7eb6ff, #b39cfa);
+    }
+    .main{
+      flex:1; min-width:0; min-height:0;
+      display:flex; flex-direction:column; gap:12px;
+      overflow-x:hidden; overflow-y:auto;
+      -webkit-overflow-scrolling:touch;
+      overscroll-behavior:contain;
+    }
+    /* fixed-left-sidebar-desktop: 左侧导航固定，仅右侧内容滚动 */
+
+    @media (min-width:981px){
+      html,body{height:100%; overflow:hidden;}
+      body{overflow:hidden;}
+      .shell{height:100vh; max-height:100vh; overflow:hidden;}
+      .sidebar{position:relative; align-self:stretch; max-height:none;}
+      .main{overflow-y:auto; min-height:0;}
+    }
+
+        @media (max-width:980px){
+      html,body{height:auto; overflow-x:hidden; overflow-y:auto;}
+      .shell{flex-direction:column; padding:10px; gap:10px; height:auto; max-height:none; overflow:visible;}
+      .main{overflow:visible; min-height:0;}
+      .sidebar{
+        position:sticky; top:0; z-index:30;
+        width:auto; min-width:0; max-width:none; max-height:none;
+        flex-direction:row; align-items:center; overflow:auto;
+        padding:8px; border-radius:18px;
+      }
+      .sidebar .side-brand{display:none}
+      .side-nav{flex-direction:row; width:100%; gap:4px}
+      .side-nav .tab{min-width:68px; padding:8px 6px}
+      .side-nav .tab .lbl{font-size:10px}
+      .side-nav .tab .kbd{display:none}
+      .side-nav .tab.on::before{left:18%; right:18%; top:auto; bottom:0; width:auto; height:3px; border-radius:3px 3px 0 0}
+      .main{gap:10px}
+      header{flex-direction:column; align-items:stretch; gap:10px; padding:12px}
+      .actions{justify-content:flex-start}
+      .brand h1{font-size:16px}
+      .kpis{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+      .split{grid-template-columns:1fr !important}
+      .risk-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important}
+      .control-row{gap:6px}
+      .control-row button{flex:1 1 calc(50% - 6px); min-width:120px}
+      .table-wrap{overflow-x:auto; -webkit-overflow-scrolling:touch}
+      table{min-width:640px}
+      .earn-grid{grid-template-columns:1fr !important}
+      .earn-card.wide{grid-column:auto}
+      .funds-bar-row{grid-template-columns:72px 1fr 78px}
+      .pos-contrib .row{grid-template-columns:1fr .8fr .8fr}
+      .info-list .info-row, .earn-list .earn-row{grid-template-columns:1.2fr .8fr .8fr}
+    }
+    @media (max-width:860px){
+      .shell{flex-direction:column}
+      .sidebar{position:sticky; top:0; width:auto; max-width:none; max-height:none; flex-direction:row; align-items:center; overflow:auto}
+      .sidebar .side-brand{display:none}
+      .side-nav{flex-direction:row; width:100%}
+      .side-nav .tab{min-width:64px}
+      .side-nav .tab.on::before{left:18%; right:18%; top:auto; bottom:0; width:auto; height:3px; border-radius:3px 3px 0 0}
+    }
+    @media (max-width:640px){
+      .shell{padding:8px; gap:8px}
+      .sidebar{padding:6px; border-radius:16px}
+      .side-nav .tab{min-width:58px; padding:8px 4px}
+      .side-nav .tab .ico{font-size:14px}
+      .side-nav .tab .lbl{font-size:10px}
+      header{padding:10px}
+      h1{font-size:15px}
+      .meta{font-size:11px}
+      .actions button, .actions .pill{font-size:11px; padding:8px 10px}
+      .kpis{grid-template-columns:1fr 1fr !important; gap:8px}
+      .card{border-radius:16px}
+      .card-head{flex-wrap:wrap; gap:6px}
+      .risk-grid{grid-template-columns:1fr 1fr !important}
+      .funds-kpis{grid-template-columns:1fr 1fr !important}
+      .funds-bar-row{grid-template-columns:1fr; gap:4px}
+      .funds-bar-row .a{text-align:left}
+      .chart-stats{grid-template-columns:1fr 1fr !important}
+      .control-row button{flex:1 1 100%; min-width:0}
+      .flag-row{display:grid; grid-template-columns:1fr 1fr; gap:6px}
+      .flag-sw{width:100%}
+      .info-kpis, .earn-kpis{grid-template-columns:1fr 1fr !important}
+      .info-list .info-row, .earn-list .earn-row, .pos-contrib .row{grid-template-columns:1fr; gap:2px}
+      .table-wrap{margin:0 -4px; padding:0 4px}
+      table{min-width:560px; font-size:12px}
+      .mode-hero{flex-direction:column; align-items:flex-start}
+      .toast{left:10px; right:10px; bottom:10px; transform:none}
+      /* 小屏降低 3D 翻转成本 */
+      .earn-card, .info-card, .mod-card, .kpi, .pos-card{transform:none !important}
+    }
+    @media (max-width:400px){
+      .side-nav .tab{min-width:52px}
+      .side-nav .tab .lbl{font-size:9px}
+      .kpis{grid-template-columns:1fr !important}
+      .funds-kpis,.risk-grid,.chart-stats,.info-kpis,.earn-kpis{grid-template-columns:1fr !important}
+      .flag-row{grid-template-columns:1fr}
+    }
+    @media (min-width:1200px){
+      .shell{padding:14px 16px}
+      .sidebar{width:92px; min-width:92px}
+    }
+    @media (hover:none) and (pointer:coarse){
+      /* 触屏：点击区域更大，默认不依赖 hover 翻转 */
+      .side-nav .tab, button, .flag-sw{min-height:40px}
+      .tilt-on, .tilt-leave{transition:none !important}
+    }
+
+    header,.card,.tabs,.toast{
+      position:relative;
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.14), rgba(255,255,255,.04) 42%, rgba(255,255,255,.02)),
+        linear-gradient(180deg, rgba(255,255,255,.05), transparent 40%),
+        var(--glass3);
+      border:1px solid var(--line);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow), var(--highlight);
+      backdrop-filter:blur(var(--blur)) saturate(165%);
+      -webkit-backdrop-filter:blur(var(--blur)) saturate(165%);
+      overflow:hidden;
+    }
+    header::before,.card::before,.tabs::before,.toast::before{
+      content:"";
+      position:absolute;inset:0;
+      pointer-events:none;
+      background:
+        linear-gradient(115deg, rgba(255,255,255,.18), transparent 28%, transparent 72%, rgba(255,255,255,.06)),
+        radial-gradient(120% 80% at 0% 0%, rgba(255,255,255,.10), transparent 42%);
+      opacity:.9;
+    }
+    header::after,.card::after{
+      content:"";
+      position:absolute;left:10%;right:10%;top:0;height:1px;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+      opacity:.55;pointer-events:none;
+    }
+    header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px}
+    header > *, .card > *, .tabs > *, .toast > *{position:relative;z-index:1}
+    .brand{display:flex;align-items:center;gap:12px;min-width:0}
+    .logo{
+      width:42px;height:42px;border-radius:14px;display:grid;place-items:center;font-weight:860;
+      background:linear-gradient(135deg,#8ec5ff,#a78bfa 55%,#ff6bcb);color:#071018;
+      box-shadow:0 10px 24px rgba(110,168,255,.34), inset 0 1px 0 rgba(255,255,255,.62), inset 0 -8px 16px rgba(255,255,255,.12)
+    }
+    h1{margin:0;font-size:17px;font-weight:780;letter-spacing:.01em}
+    h1 em{font-style:normal;color:#d4c6ff;text-shadow:0 0 18px rgba(167,139,250,.45)}
+    .meta{color:var(--muted);font-size:12px;margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .dot{width:6px;height:6px;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px rgba(61,255,176,.10), 0 0 8px rgba(61,255,176,.28)}
+    .dot.off{background:#6d788f;box-shadow:none}
+    .actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+    .pill{
+      display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:680;
+      border:1px solid var(--line2);color:var(--muted);
+      background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
+      backdrop-filter:blur(12px);
+      -webkit-backdrop-filter:blur(12px);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.16), 0 6px 14px rgba(0,0,0,.12)
+    }
+    .pill.live,.pill.auto{color:#04101f;background:linear-gradient(135deg,#9ed0ff,#6ea8ff);border:none;box-shadow:0 8px 18px rgba(110,168,255,.28), inset 0 1px 0 rgba(255,255,255,.45)}
+    .pill.paper,.pill.sell_only{color:#201404;background:linear-gradient(135deg,#ffe08a,#ffd166);border:none;box-shadow:0 8px 18px rgba(255,209,102,.22), inset 0 1px 0 rgba(255,255,255,.4)}
+    .pill.run{color:#04160d;background:linear-gradient(135deg,#79ffc5,#3dffb0);border:none;box-shadow:0 8px 18px rgba(61,255,176,.22), inset 0 1px 0 rgba(255,255,255,.4)}
+    .pill.stop,.pill.paused{color:#fff;background:rgba(90,100,120,.72);border:none}
+    .pill.err,.pill.sell{color:#2b0610;background:rgba(255,107,138,.92);border:none}
+    .pill.buy{color:#062416;background:rgba(61,255,176,.9);border:none}
+    .pill.hold{color:var(--warn);background:rgba(255,209,102,.12)}
+    .pill.submitted,.pill.pending{color:#0b1a2a;background:rgba(158,208,255,.88);border:none}
+    .pill.filled,.pill.success{color:#062416;background:rgba(61,255,176,.9);border:none}
+    .pill.rejected,.pill.failed,.pill.canceled,.pill.cancelled{color:#2b0610;background:rgba(255,107,138,.92);border:none}
+    button{
+      appearance:none;border:1px solid var(--line2);
+      background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
+      color:var(--text);
+      border-radius:12px;padding:9px 12px;font-size:12px;font-weight:680;cursor:pointer;
+      backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.16), 0 8px 18px rgba(0,0,0,.12);
+      transition:border-color .15s ease, background .15s ease, transform .12s ease, box-shadow .15s ease
+    }
+    button:hover{
+      border-color:rgba(126,182,255,.62);
+      background:linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.07));
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 10px 22px rgba(110,168,255,.12)
+    }
+    button:active{transform:translateY(1px)}
+    button.primary{
+      background:linear-gradient(135deg,rgba(110,168,255,.42),rgba(167,139,250,.28));
+      border-color:rgba(126,182,255,.55);
+      box-shadow:0 12px 24px rgba(110,168,255,.18), inset 0 1px 0 rgba(255,255,255,.28)
+    }
+    button.danger{background:linear-gradient(180deg, rgba(255,107,138,.22), rgba(255,107,138,.10));border-color:rgba(255,107,138,.42)}
+    button.warn{background:linear-gradient(180deg, rgba(255,209,102,.18), rgba(255,209,102,.08));border-color:rgba(255,209,102,.40)}
+    button.active{outline:2px solid rgba(126,182,255,.95); box-shadow:0 0 0 3px rgba(110,168,255,.22), 0 10px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.24); filter:saturate(1.1) brightness(1.08); position:relative}
+    button.active::after{content:'当前'; position:absolute; top:-8px; right:-6px; font-size:10px; line-height:1; padding:3px 5px; border-radius:999px; background:rgba(110,168,255,.95); color:#061018; font-weight:700; box-shadow:0 4px 12px rgba(0,0,0,.25)}
+    .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .card{padding:12px 14px}
+    .kpi{
+      position:relative;overflow:hidden;
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.20), rgba(255,255,255,.05) 44%, rgba(110,168,255,.10)),
+        linear-gradient(180deg, rgba(255,255,255,.08), transparent 52%),
+        rgba(8,14,28,.36);
+      border:1px solid rgba(190,220,255,.20);
+      box-shadow:var(--shadow2), var(--highlight), 0 0 0 1px rgba(255,255,255,.04), 0 0 28px rgba(110,168,255,.06);
+    }
+    .kpi::before{
+      content:"";position:absolute;inset:0 auto auto 0;width:150px;height:150px;
+      background:radial-gradient(circle, rgba(150,200,255,.26), transparent 68%);
+      pointer-events:none;filter:blur(2px)
+    }
+    .kpi::after{
+      content:"";position:absolute;right:-30px;bottom:-40px;width:120px;height:120px;
+      background:radial-gradient(circle, rgba(167,139,250,.16), transparent 70%);
+      pointer-events:none
+    }
+    .kpi .label{position:relative;z-index:1;color:var(--muted);font-size:12px;margin-bottom:8px;display:flex;justify-content:space-between}
+    .kpi .value{position:relative;z-index:1;font-size:22px;font-weight:820;letter-spacing:-.03em;text-shadow:0 0 28px rgba(255,255,255,.12)}
+    .kpi .sub{position:relative;z-index:1;margin-top:6px;color:var(--muted);font-size:12px}
+    .good{color:var(--good)!important}.bad{color:var(--bad)!important}
+    .tabs{ /* legacy; sidebar uses .side-nav > .tab */ }
+    .tabs.legacy-top{display:none !important}
+
+    .tab{
+      flex:0 0 auto;border:1px solid transparent;background:transparent;color:var(--muted);
+      border-radius:12px;padding:10px 14px;font-weight:720
+    }
+    .tab.on{
+      color:var(--text);
+      background:linear-gradient(135deg, rgba(126,182,255,.28), rgba(167,139,250,.18));
+      border-color:rgba(126,182,255,.42);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 8px 18px rgba(110,168,255,.14)
+    }
+    .panel{flex:1;min-height:0}
+    .view{display:none}
+    .view.on{display:block}
+    .card-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+    .card-head h2{margin:0;font-size:14px}
+    .hint{color:var(--muted);font-size:12px;max-width:56%;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .alloc{
+      display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:center;margin-bottom:12px;padding:10px;
+      border-radius:16px;
+      background:
+        linear-gradient(160deg, rgba(255,255,255,.16), rgba(255,255,255,.04) 50%, rgba(110,168,255,.06)),
+        linear-gradient(180deg, rgba(255,255,255,.05), transparent 55%),
+        rgba(8,14,28,.28);
+      border:1px solid rgba(210,230,255,.20);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.20), 0 10px 22px rgba(0,0,0,.12);
+      backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%)
+    }
+    .donut{
+      --p:0%;width:108px;height:108px;border-radius:50%;margin:0 auto;display:grid;place-items:center;
+      background:
+        radial-gradient(circle at center, rgba(8,12,22,.90) 54%, transparent 55%),
+        conic-gradient(from 210deg, #7eb6ff 0 var(--p), rgba(255,255,255,.10) var(--p) 100%);
+      box-shadow:0 12px 30px rgba(0,0,0,.28), inset 0 0 0 1px rgba(255,255,255,.12), inset 0 1px 0 rgba(255,255,255,.2)
+    }
+    .donut b{display:block;font-size:18px;text-align:center}
+    .donut span{color:var(--muted);font-size:11px}
+    .legend{display:grid;gap:7px}
+    .legend-item{display:grid;grid-template-columns:10px 1fr auto;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+    .legend-item i{width:10px;height:10px;border-radius:3px;display:block;box-shadow:0 0 10px currentColor}
+    .legend-item strong{color:var(--text)}
+    .pos-grid{display:grid;gap:8px;max-height:52vh;overflow-x:hidden;overflow-y:auto;padding:2px 4px 2px 2px;scrollbar-gutter:auto}
+    .pos-grid > .pos-card{min-width:0; max-width:100%; transform-origin:center center}
+    .pos-card{
+      position:relative;overflow:hidden;
+      display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,.9fr) minmax(0,.9fr) minmax(0,.9fr);gap:8px;align-items:center;
+      padding:11px;border-radius:16px;
+      min-width:0; max-width:100%; box-sizing:border-box;
+      border:1px solid rgba(210,230,255,.22);
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.16), rgba(255,255,255,.04) 48%, rgba(110,168,255,.06)),
+        linear-gradient(180deg, rgba(255,255,255,.06), transparent 55%),
+        rgba(8,14,28,.28);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(255,255,255,.04), 0 10px 22px rgba(0,0,0,.14);
+      backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%)
+    }
+    .pos-card::before{
+      content:"";position:absolute;left:8%;right:8%;top:0;height:1px;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+      opacity:.5;pointer-events:none
+    }
+    .title{font-weight:760}.sub,.name,.reason,.s{color:var(--muted);font-size:12px}
+    .metric{text-align:right}.metric .v{font-weight:760;font-size:13px}
+    .bars{display:flex;gap:8px;align-items:center;margin-top:7px}
+    .bar{flex:1;height:8px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.10);box-shadow:inset 0 1px 2px rgba(0,0,0,.22)}
+    .bar>i{display:block;height:100%;width:0;box-shadow:0 0 12px rgba(126,182,255,.40)}
+    .table-wrap{
+      overflow:auto;border-radius:16px;max-height:58vh;scrollbar-gutter:stable;
+      border:1px solid rgba(210,230,255,.18);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02)),
+        rgba(4,10,22,.32);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 10px 22px rgba(0,0,0,.12);
+      backdrop-filter:blur(14px) saturate(145%);-webkit-backdrop-filter:blur(14px) saturate(145%)
+    }
+    table{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
+    th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,.06);text-align:left;vertical-align:top}
+    th{
+      color:#c8d8f5;font-size:11px;text-transform:uppercase;letter-spacing:.04em;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.06)),
+        rgba(10,18,34,.72);
+      border-bottom:1px solid rgba(190,220,255,.16);
+      position:sticky;top:0;z-index:2;
+      backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.16)
+    }
+    .scorebar{width:72px;height:8px;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.10);display:inline-block;vertical-align:middle;margin-right:8px}
+    .scorebar>i{display:block;height:100%;background:linear-gradient(90deg,#56e1ff,#6ea8ff 55%,#a78bfa)}
+    .scorebar.neg>i{background:linear-gradient(90deg,#ffd166,#ff6b8a)}
+    .mode-hero{
+      position:relative;overflow:hidden;
+      display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:12px;border-radius:16px;
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.18), rgba(255,255,255,.04) 48%, rgba(167,139,250,.08)),
+        linear-gradient(180deg, rgba(255,255,255,.06), transparent 55%),
+        rgba(8,14,28,.30);
+      border:1px solid rgba(210,230,255,.22);margin-bottom:10px;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.22), inset 0 -1px 0 rgba(255,255,255,.04), 0 12px 26px rgba(0,0,0,.14);
+      backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%)
+    }
+    .mode-hero::before{
+      content:"";position:absolute;left:10%;right:10%;top:0;height:1px;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent);
+      opacity:.55;pointer-events:none
+    }
+    .mode-hero .t{font-size:15px;font-weight:780}
+    .mode-hero .d{color:var(--muted);font-size:12px;margin-top:4px;line-height:1.5}
+    .control-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+    .risk-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+    .risk-item{
+      position:relative;overflow:hidden;
+      padding:10px;border-radius:14px;
+      border:1px solid rgba(210,230,255,.20);
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.16), rgba(255,255,255,.04) 48%, rgba(110,168,255,.07)),
+        linear-gradient(180deg, rgba(255,255,255,.06), transparent 55%),
+        rgba(8,14,28,.30);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.20), inset 0 -1px 0 rgba(255,255,255,.04), 0 10px 20px rgba(0,0,0,.12);
+      backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%)
+    }
+    .risk-item::before{
+      content:"";position:absolute;left:12%;right:12%;top:0;height:1px;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,.48), transparent);
+      opacity:.5;pointer-events:none
+    }
+    .risk-item .k{color:var(--muted);font-size:11px}.risk-item .v{margin-top:4px;font-weight:760}
+
+    .farm-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}
+    .farm-item{
+      position:relative;overflow:hidden;padding:10px;border-radius:14px;
+      border:1px solid rgba(210,230,255,.20);
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.16), rgba(255,255,255,.04) 48%, rgba(61,255,176,.07)),
+        linear-gradient(180deg, rgba(255,255,255,.06), transparent 55%),
+        rgba(8,14,28,.28);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.20), inset 0 -1px 0 rgba(255,255,255,.04), 0 10px 20px rgba(0,0,0,.12);
+      backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%)
+    }
+    .farm-item .k{color:var(--muted);font-size:11px}
+    .farm-item .v{margin-top:4px;font-weight:760;font-size:13px}
+    .farm-note{margin-top:8px;color:var(--muted);font-size:12px;line-height:1.4}
+    @media (max-width:980px){ .farm-grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+    @media (max-width:640px){ .farm-grid{grid-template-columns:1fr 1fr} }
+
+    .note{
+      margin-top:10px;padding:8px 10px;border-radius:12px;
+      border:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.03);
+      color:rgba(176,192,214,.88);font-size:12px;line-height:1.4;
+      box-shadow:none
+    }
+    .chart-card{padding-bottom:12px}
+    .chart-meta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+    .chart-pills{display:flex;gap:6px;flex-wrap:wrap}
+    .chart-pill{
+      border:1px solid rgba(210,230,255,.18);
+      background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
+      color:var(--muted);border-radius:999px;padding:4px 10px;font-size:11px;cursor:pointer;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.14)
+    }
+    .chart-pill.on{
+      color:#eef5ff;border-color:rgba(126,182,255,.42);
+      background:linear-gradient(180deg, rgba(126,182,255,.28), rgba(110,168,255,.12));
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.22), 0 0 14px rgba(110,168,255,.16)
+    }
+    .chart-legend{display:flex;gap:12px;margin-left:auto;color:var(--muted);font-size:12px}
+    .chart-legend i{display:inline-block;width:10px;height:10px;border-radius:999px;margin-right:6px;vertical-align:-1px}
+    .chart-legend .eq i{background:#56e1ff;box-shadow:0 0 10px rgba(86,225,255,.55)}
+    .chart-legend .cash i{background:#6ea8ff;box-shadow:0 0 10px rgba(110,168,255,.45)}
+    .chart-box{
+      position:relative;height:220px;border-radius:16px;overflow:hidden;
+      border:1px solid rgba(210,230,255,.18);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02)),
+        rgba(4,10,22,.30);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 10px 22px rgba(0,0,0,.12);
+      backdrop-filter:blur(14px) saturate(145%);-webkit-backdrop-filter:blur(14px) saturate(145%)
+    }
+    .chart-box canvas{width:100%;height:100%;display:block}
+    .chart-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px}
+    .chart-stat{
+      padding:8px 10px;border-radius:12px;
+      border:1px solid rgba(210,230,255,.14);
+      background:linear-gradient(155deg, rgba(255,255,255,.10), rgba(255,255,255,.03));
+    }
+    .chart-stat .k{color:var(--muted);font-size:11px}
+    .chart-stat .v{margin-top:3px;font-weight:760;font-size:13px}
+    @media (max-width:980px){
+      .chart-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .chart-box{height:200px}
+    }
+    @media (max-width:640px){
+      .chart-legend{margin-left:0;width:100%}
+      .chart-stats{grid-template-columns:1fr 1fr}
+    }
+    .logbox{
+      margin:0;min-height:120px;max-height:240px;overflow:auto;
+      padding:10px 12px;border-radius:14px;
+      border:1px solid rgba(210,230,255,.18);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02)),
+        rgba(4,10,22,.32);
+      color:rgba(190,206,230,.92);
+      font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      white-space:pre-wrap;word-break:break-word;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 10px 22px rgba(0,0,0,.12);
+      backdrop-filter:blur(14px) saturate(145%);-webkit-backdrop-filter:blur(14px) saturate(145%)
+    }
+    /* glass scrollbars: page + internal containers share one language */
+    html{
+      scrollbar-width:thin;
+      scrollbar-color:rgba(160,190,255,.42) rgba(255,255,255,.045);
+    }
+    html,body,.sidebar,.pos-grid,.table-wrap,.logbox,.tabs,.main{
+      scrollbar-width:thin;
+      scrollbar-color:rgba(160,190,255,.42) rgba(255,255,255,.045);
+    }
+    html::-webkit-scrollbar,
+    body::-webkit-scrollbar,
+    .sidebar::-webkit-scrollbar,
+    .main::-webkit-scrollbar,
+    .pos-grid::-webkit-scrollbar,
+    .table-wrap::-webkit-scrollbar,
+    .logbox::-webkit-scrollbar,
+    .tabs::-webkit-scrollbar{width:10px;height:10px}
+    html::-webkit-scrollbar-track,
+    body::-webkit-scrollbar-track,
+    .sidebar::-webkit-scrollbar-track,
+    .main::-webkit-scrollbar-track,
+    .pos-grid::-webkit-scrollbar-track,
+    .table-wrap::-webkit-scrollbar-track,
+    .logbox::-webkit-scrollbar-track,
+    .tabs::-webkit-scrollbar-track{
+      background:linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.02));
+      border-radius:999px;
+      margin:4px;
+      box-shadow:inset 0 0 0 1px rgba(210,230,255,.10);
+    }
+    html::-webkit-scrollbar-thumb,
+    body::-webkit-scrollbar-thumb,
+    .sidebar::-webkit-scrollbar-thumb,
+    .main::-webkit-scrollbar-thumb,
+    .pos-grid::-webkit-scrollbar-thumb,
+    .table-wrap::-webkit-scrollbar-thumb,
+    .logbox::-webkit-scrollbar-thumb,
+    .tabs::-webkit-scrollbar-thumb{
+      background:linear-gradient(180deg, rgba(210,230,255,.48), rgba(110,168,255,.28));
+      border-radius:999px;
+      border:1px solid rgba(220,235,255,.24);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.36), 0 0 12px rgba(110,168,255,.18);
+      min-height:28px;
+    }
+    html::-webkit-scrollbar-thumb:hover,
+    body::-webkit-scrollbar-thumb:hover,
+    .sidebar::-webkit-scrollbar-thumb:hover,
+    .main::-webkit-scrollbar-thumb:hover,
+    .pos-grid::-webkit-scrollbar-thumb:hover,
+    .table-wrap::-webkit-scrollbar-thumb:hover,
+    .logbox::-webkit-scrollbar-thumb:hover,
+    .tabs::-webkit-scrollbar-thumb:hover{
+      background:linear-gradient(180deg, rgba(230,240,255,.60), rgba(126,182,255,.42));
+    }
+    html::-webkit-scrollbar-corner,
+    body::-webkit-scrollbar-corner,
+    .sidebar::-webkit-scrollbar-corner,
+    .main::-webkit-scrollbar-corner,
+    .pos-grid::-webkit-scrollbar-corner,
+    .table-wrap::-webkit-scrollbar-corner,
+    .logbox::-webkit-scrollbar-corner{background:transparent}
+
+    /* left sidebar: no visible scrollbar (visual noise) */
+    .sidebar{
+      scrollbar-width: none !important; /* firefox */
+      -ms-overflow-style: none; /* old edge */
+    }
+    .sidebar::-webkit-scrollbar{ width:0 !important; height:0 !important; display:none !important; }
+    .sidebar::-webkit-scrollbar-thumb,
+    .sidebar::-webkit-scrollbar-track{ display:none !important; background:transparent !important; }
+
+    /* toast styles defined later */
+    @media (max-width:980px){
+      .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .split{grid-template-columns:1fr}
+      .pos-card{grid-template-columns:1fr 1fr}
+      .risk-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+    @media (max-width:640px){
+      header{flex-direction:column;align-items:stretch}
+      .actions{justify-content:flex-start}
+      .kpis{grid-template-columns:1fr 1fr}
+      .pos-card{grid-template-columns:1fr}
+      .metric{text-align:left}
+      .alloc{grid-template-columns:1fr}
+      .risk-grid{grid-template-columns:1fr}
+    }
+
+    /* ===== interaction polish ===== */
+    :root{ --ease:cubic-bezier(.2,.8,.2,1); --fast:.16s; --mid:.24s; }
+    /* silent refresh: no whole-page gray flash */
+    .shell.refreshing{ cursor:default }
+    .live-meta{
+      display:inline-flex; align-items:center; gap:8px;
+      color:rgba(160,178,204,.82); font-size:12px;
+    }
+    .live-meta #updated{
+      color:rgba(170,188,214,.88);
+      letter-spacing:.01em;
+      font-variant-numeric:tabular-nums;
+      min-width:4.8em;
+    }
+    .status-chip{
+      display:inline-flex; align-items:center; gap:0;
+      padding:0; border:0; background:transparent;
+      color:transparent; font-size:0; line-height:0;
+    }
+    .status-chip .txt{ display:none }
+    .status-chip.is-off .txt{
+      display:inline; font-size:11px; line-height:1; font-weight:650;
+      color:rgba(255,170,186,.92); margin-left:6px;
+    }
+    .status-chip .dot{
+      width:7px; height:7px;
+      box-shadow:0 0 0 3px rgba(61,255,176,.10), 0 0 10px rgba(61,255,176,.28);
+    }
+    .status-chip .dot.off{
+      background:#6d788f;
+      box-shadow:none;
+    }
+    .top-status{
+      display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:flex-end;
+    }
+    .top-status .pill{
+      padding:4px 8px; font-size:11px; font-weight:650;
+      border-color:rgba(255,255,255,.08);
+      background:rgba(255,255,255,.04);
+      box-shadow:none; color:rgba(176,192,214,.92);
+    }
+    .top-status .pill.live,
+    .top-status .pill.run,
+    .top-status .pill.auto,
+    .top-status .pill.risk_on{
+      color:rgba(170,230,205,.95);
+      border-color:rgba(61,255,176,.16);
+      background:rgba(61,255,176,.06);
+    }
+    .top-status .pill.paper,
+    .top-status .pill.stop,
+    .top-status .pill.paused,
+    .top-status .pill.neutral{
+      color:rgba(176,192,214,.9);
+    }
+    .top-status .pill.sell_only,
+    .top-status .pill.warn,
+    .top-status .pill.risk_off{
+      color:rgba(255,220,150,.95);
+      border-color:rgba(255,209,102,.18);
+      background:rgba(255,209,102,.07);
+    }
+    .top-status .pill.err,
+    .top-status .pill.crash{
+      color:rgba(255,170,186,.96);
+      border-color:rgba(255,107,138,.22);
+      background:rgba(255,107,138,.08);
+    }
+    .spin{
+      width:11px;height:11px;border-radius:50%;
+      border:2px solid rgba(190,220,255,.18);
+      border-top-color:rgba(126,182,255,.9);
+      display:none; animation:spin .7s linear infinite
+    }
+    .shell.refreshing.manual .spin, button.busy .spin, .spin.on{ display:inline-block }
+    @keyframes spin{to{transform:rotate(360deg)}}
+    button{
+      position:relative;
+      transition:border-color var(--fast) var(--ease), background var(--fast) var(--ease), transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease), opacity var(--fast) var(--ease), filter var(--fast) var(--ease);
+    }
+    button:hover{ transform:translateY(-1px) }
+    button:active{ transform:translateY(1px) scale(.98) }
+    button:focus-visible, .tab:focus-visible{
+      outline:2px solid rgba(126,182,255,.85);
+      outline-offset:2px;
+      box-shadow:0 0 0 4px rgba(110,168,255,.18)
+    }
+    button:disabled{
+      opacity:.58; cursor:not-allowed; transform:none!important; filter:grayscale(.15)
+    }
+    /* manual refresh only: tiny spinner, no grayscale wash */
+    button.busy{
+      opacity:1; cursor:progress; filter:none;
+    }
+    button.primary:hover{
+      box-shadow:0 14px 28px rgba(110,168,255,.24), inset 0 1px 0 rgba(255,255,255,.32)
+    }
+    button.danger:hover{
+      border-color:rgba(255,107,138,.7);
+      box-shadow:0 12px 24px rgba(255,107,138,.16), inset 0 1px 0 rgba(255,255,255,.18)
+    }
+    button.warn:hover{
+      border-color:rgba(255,209,102,.7);
+      box-shadow:0 12px 24px rgba(255,209,102,.14), inset 0 1px 0 rgba(255,255,255,.18)
+    }
+    button.active{outline:2px solid rgba(126,182,255,.95); box-shadow:0 0 0 3px rgba(110,168,255,.22), 0 10px 24px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.24); filter:saturate(1.1) brightness(1.08); position:relative}
+    .pill{
+      transition:transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease), background var(--fast) var(--ease), color var(--fast) var(--ease)
+    }
+    .pill:hover{ transform:translateY(-1px) }
+    .tabs{ gap:6px; scroll-behavior:smooth }
+    .tab{
+      position:relative;
+      transition:color var(--fast) var(--ease), background var(--fast) var(--ease), border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease), transform var(--fast) var(--ease)
+    }
+    .tab:hover{ color:var(--text); background:rgba(255,255,255,.06); transform:translateY(-1px) }
+    .tab.on{ transform:none }
+    .tab.on::after{
+      content:""; position:absolute; left:18%; right:18%; bottom:5px; height:2px; border-radius:999px;
+      background:linear-gradient(90deg, transparent, rgba(255,255,255,.75), transparent);
+      opacity:.7
+    }
+    .panel{ position:relative }
+    .view{
+      display:none;
+      opacity:0; transform:translateY(8px);
+      transition:opacity var(--mid) var(--ease), transform var(--mid) var(--ease)
+    }
+    .view.on{
+      display:block;
+      opacity:1; transform:translateY(0);
+      animation:viewIn var(--mid) var(--ease)
+    }
+    @keyframes viewIn{
+      from{ opacity:0; transform:translateY(10px) }
+      to{ opacity:1; transform:translateY(0) }
+    }
+    .kpi, .pos-card, .risk-item, .mode-hero, .alloc{
+      transition:transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease), border-color var(--fast) var(--ease), background var(--fast) var(--ease)
+    }
+    .kpi:hover, .pos-card:hover, .risk-item:hover, .mode-hero:hover, .alloc:hover{
+      transform:translateY(-2px);
+      border-color:rgba(190,220,255,.34);
+      box-shadow:0 16px 32px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.24)
+    }
+    .pos-card{ cursor:default }
+    .flash{
+      animation:flashPulse .8s var(--ease)
+    }
+    @keyframes flashPulse{
+      0%{ box-shadow:0 0 0 0 rgba(126,182,255,.0) }
+      35%{ box-shadow:0 0 0 6px rgba(126,182,255,.16), inset 0 1px 0 rgba(255,255,255,.28) }
+      100%{ box-shadow:var(--shadow2) }
+    }
+    .toast{
+      position:fixed; right:16px; bottom:16px; z-index:80; min-width:220px; max-width:360px;
+      padding:12px 14px; border-radius:14px; display:block;
+      opacity:0; transform:translateY(12px) scale(.98); pointer-events:none;
+      transition:opacity var(--mid) var(--ease), transform var(--mid) var(--ease);
+      box-shadow:0 18px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.18)
+    }
+    .toast.show{ opacity:1; transform:translateY(0) scale(1); pointer-events:auto }
+    .toast.ok{ border-color:rgba(61,255,176,.35) }
+    .toast.err{ border-color:rgba(255,107,138,.45) }
+    .toast.warn{ border-color:rgba(255,209,102,.4) }
+    .toast .toast-title{ font-size:12px; font-weight:760; margin-bottom:2px }
+    .toast .toast-msg{ color:var(--muted); font-size:12px; line-height:1.45 }
+    .toast .toast-bar{
+      position:absolute; left:10px; right:10px; bottom:0; height:2px; border-radius:999px; overflow:hidden;
+      background:rgba(255,255,255,.08)
+    }
+    .toast .toast-bar>i{
+      display:block; height:100%; width:100%; transform-origin:left center;
+      background:linear-gradient(90deg,#6ea8ff,#a78bfa);
+      animation:toastBar 2.2s linear forwards
+    }
+    .toast.err .toast-bar>i{ background:linear-gradient(90deg,#ff6b8a,#ffd166) }
+    .toast.ok .toast-bar>i{ background:linear-gradient(90deg,#3dffb0,#6ea8ff) }
+    @keyframes toastBar{ from{ transform:scaleX(1)} to{ transform:scaleX(0)} }
+    .modal-mask{
+      position:fixed; inset:0; z-index:70; display:none; place-items:center;
+      background:rgba(2,6,14,.55); backdrop-filter:blur(10px) saturate(140%);
+      -webkit-backdrop-filter:blur(10px) saturate(140%);
+      padding:18px
+    }
+    .modal-mask.show{ display:grid; animation:fadeIn .16s ease }
+    @keyframes fadeIn{ from{opacity:0} to{opacity:1} }
+    .modal{
+      width:min(420px,100%);
+      border-radius:18px; padding:16px;
+      border:1px solid rgba(210,230,255,.22);
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.16), rgba(255,255,255,.04) 48%, rgba(110,168,255,.08)),
+        rgba(8,14,28,.72);
+      box-shadow:0 24px 60px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.22);
+      backdrop-filter:blur(18px) saturate(160%);
+      -webkit-backdrop-filter:blur(18px) saturate(160%);
+      transform:translateY(8px) scale(.98);
+      animation:modalIn .18s var(--ease) forwards
+    }
+    @keyframes modalIn{ to{ transform:translateY(0) scale(1)} }
+    .modal h3{ margin:0 0 6px; font-size:16px }
+    .modal p{ margin:0; color:var(--muted); font-size:13px; line-height:1.55 }
+    .modal .modal-actions{ display:flex; gap:8px; justify-content:flex-end; margin-top:14px; flex-wrap:wrap }
+    .kbd{
+      display:inline-flex; align-items:center; justify-content:center;
+      min-width:18px; height:18px; padding:0 5px; border-radius:6px;
+      border:1px solid rgba(190,220,255,.22);
+      background:rgba(255,255,255,.06); color:var(--muted);
+      font-size:10px; font-weight:700; margin-left:6px
+    }
+    .hotkeys{ color:var(--muted); font-size:11px; margin-top:8px }
+    .refresh-btn .label, #autoBtn .label{ pointer-events:none }
+    .skeleton{
+      background:linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.10), rgba(255,255,255,.04));
+      background-size:200% 100%; animation:shimmer 1.2s linear infinite; border-radius:8px; color:transparent!important
+    }
+    @keyframes shimmer{ from{ background-position:200% 0} to{ background-position:-200% 0} }
+    @media (prefers-reduced-motion: reduce){
+      *, *::before, *::after{
+        animation:none!important; transition:none!important; scroll-behavior:auto!important
+      }
+    }
+  
+    
+    
+    .earn-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:10px}
+    .flag-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+    .flag-sw{
+      display:inline-flex;align-items:center;gap:8px;padding:7px 10px;border-radius:999px;
+      border:1px solid rgba(210,230,255,.16); background:rgba(8,14,28,.35);
+      cursor:pointer; user-select:none; transition:all .15s ease; font-size:12px; font-weight:700;
+    }
+    .flag-sw:hover{border-color:rgba(140,200,255,.35); background:rgba(20,36,64,.45)}
+    .flag-sw.on{border-color:rgba(90,220,160,.45); box-shadow:0 0 0 1px rgba(90,220,160,.18) inset}
+    .flag-sw.off{opacity:.92}
+    .flag-sw.busy{opacity:.55; pointer-events:none}
+    .flag-sw .knob{
+      width:34px;height:18px;border-radius:999px;position:relative;
+      background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.16);
+      transition:background .15s ease;
+    }
+    .flag-sw.on .knob{background:rgba(90,220,160,.35); border-color:rgba(90,220,160,.5)}
+    .flag-sw .knob::after{
+      content:''; position:absolute; top:1px; left:2px; width:14px; height:14px; border-radius:50%;
+      background:#e8f2ff; box-shadow:0 1px 3px rgba(0,0,0,.35); transition:transform .15s ease;
+    }
+    .flag-sw.on .knob::after{transform:translateX(14px); background:#b9ffd8}
+    .flag-sw .flabel{color:var(--text)}
+    .flag-sw .fstate{color:var(--muted); font-weight:650; font-size:11px}
+    .flag-sw.on .fstate{color:#8dffc0}
+    .flag-sw.risk-high{border-color:rgba(255,150,120,.22)}
+    .flag-sw.risk-high.on{border-color:rgba(255,150,120,.5)}
+    .flag-note{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.45}
+
+    .cookie-mgr{margin-top:12px;padding-top:10px;border-top:1px solid rgba(210,230,255,.10)}
+    .cookie-mgr h3{margin:0 0 6px;font-size:14px;font-weight:780}
+    .cookie-mgr .cookie-kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}
+    .cookie-mgr .cookie-kpi{padding:8px 10px;border-radius:12px;border:1px solid rgba(210,230,255,.14);background:rgba(8,14,28,.28)}
+    .cookie-mgr .cookie-kpi .k{color:var(--muted);font-size:11px}
+    .cookie-mgr .cookie-kpi .v{margin-top:3px;font-size:12px;font-weight:740;word-break:break-all}
+    .cookie-mgr textarea{
+      width:100%;min-height:110px;resize:vertical;box-sizing:border-box;
+      border-radius:12px;border:1px solid rgba(210,230,255,.16);
+      background:rgba(6,12,24,.55);color:var(--text);
+      padding:10px 12px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    }
+    .cookie-mgr textarea:focus{outline:none;border-color:rgba(126,182,255,.55);box-shadow:0 0 0 3px rgba(110,168,255,.15)}
+    .cookie-mgr .cookie-list{display:flex;flex-direction:column;gap:6px;margin:8px 0}
+    .cookie-mgr .cookie-item{padding:8px 10px;border-radius:12px;border:1px solid rgba(210,230,255,.12);background:rgba(8,14,28,.25)}
+    .cookie-mgr .cookie-item .n{font-weight:760;font-size:12px}
+    .cookie-mgr .cookie-item .m{color:var(--muted);font-size:11px;margin-top:3px;line-height:1.4;word-break:break-all}
+    .cookie-mgr .cookie-actions{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+    .cookie-mgr .cookie-actions button{flex:1 1 120px}
+    .cookie-mgr input.token-input{
+      width:100%;box-sizing:border-box;border-radius:12px;border:1px solid rgba(210,230,255,.16);
+      background:rgba(6,12,24,.55);color:var(--text);padding:8px 10px;font-size:12px;margin-top:4px
+    }
+    .cookie-mgr .cookie-msg{margin-top:6px;font-size:12px;line-height:1.45;color:var(--muted);min-height:1.2em}
+    .cookie-mgr .cookie-msg.ok{color:#8dffc0}
+    .cookie-mgr .cookie-msg.bad{color:#ff9bb0}
+    .cookie-login-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;align-items:center}
+    .cookie-login-row .token-input{flex:1 1 140px;margin-top:0}
+    .cookie-login-row button{flex:0 0 auto;min-width:88px}
+
+    .earn-card{contain:layout paint style;
+      position:relative;overflow:visible;padding:14px;border-radius:18px;
+      border:1px solid rgba(210,230,255,.16);
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.14), rgba(255,255,255,.04) 48%, rgba(110,168,255,.08)),
+        rgba(8,14,28,.32);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.16), 0 12px 28px rgba(0,0,0,.18);
+      min-height:220px;display:flex;flex-direction:column;gap:10px;
+      transition:box-shadow .16s ease-out;
+    }
+    .earn-card.wide{grid-column:1 / -1}
+    .earn-card .eh{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .earn-card .et{font-weight:780;font-size:15px}
+    .earn-card .esub{color:var(--muted);font-size:11px;margin-left:6px;font-weight:600}
+    .earn-card .badge{
+      font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:var(--muted);white-space:nowrap
+    }
+    .earn-card .badge.ok{color:var(--good);border-color:rgba(61,255,176,.28);background:rgba(61,255,176,.08)}
+    .earn-card .badge.warn{color:var(--warn);border-color:rgba(255,209,102,.28);background:rgba(255,209,102,.08)}
+    .earn-card .badge.bad{color:var(--bad);border-color:rgba(255,107,138,.28);background:rgba(255,107,138,.08)}
+    .earn-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    .earn-kpi{padding:8px 9px;border-radius:12px;border:1px solid rgba(210,230,255,.10);background:rgba(255,255,255,.04)}
+    .earn-kpi .k{font-size:10px;color:var(--muted)}
+    .earn-kpi .v{font-size:13px;font-weight:740;margin-top:2px;word-break:break-word}
+    .earn-list{display:flex;flex-direction:column;gap:6px;max-height:150px;overflow:auto}
+    .earn-row{display:grid;grid-template-columns:1.2fr .8fr .9fr;gap:8px;padding:7px 9px;border-radius:11px;background:rgba(255,255,255,.03);border:1px solid rgba(210,230,255,.08);font-size:12px}
+    .earn-note{margin-top:auto;padding-top:8px;border-top:1px solid rgba(210,230,255,.10);color:rgba(210,225,245,.9);font-size:12px;line-height:1.45}
+    .earn-chips{display:flex;flex-wrap:wrap;gap:5px}
+    .earn-chip{font-size:10px;padding:2px 7px;border-radius:999px;border:1px solid rgba(210,230,255,.14);background:rgba(255,255,255,.05);color:rgba(210,225,250,.92);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .earn-chip.ok{border-color:rgba(61,255,176,.24);color:var(--good)}
+    .earn-chip.warn{border-color:rgba(255,209,102,.24);color:var(--warn)}
+    .earn-chip.bad{border-color:rgba(255,107,138,.24);color:var(--bad)}
+    @media (max-width:980px){
+      .earn-grid{grid-template-columns:1fr}
+      .earn-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+    .info-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:10px}
+    .info-card{
+      position:relative;overflow:visible;padding:14px;border-radius:18px;
+      border:1px solid rgba(210,230,255,.16);
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.14), rgba(255,255,255,.04) 48%, rgba(167,139,250,.08)),
+        rgba(8,14,28,.32);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.16), 0 12px 28px rgba(0,0,0,.18);
+      min-height:220px;display:flex;flex-direction:column;gap:10px;
+      transition:box-shadow .16s ease-out;
+    }
+    .info-card.wide{grid-column:1 / -1}
+    .info-card .eh{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .info-card .et{font-weight:780;font-size:15px}
+    .info-card .badge{
+      font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:var(--muted);white-space:nowrap
+    }
+    .info-card .badge.ok{color:var(--good);border-color:rgba(61,255,176,.28);background:rgba(61,255,176,.08)}
+    .info-card .badge.warn{color:var(--warn);border-color:rgba(255,209,102,.28);background:rgba(255,209,102,.08)}
+    .info-card .badge.bad{color:var(--bad);border-color:rgba(255,107,138,.28);background:rgba(255,107,138,.08)}
+    .info-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    .info-kpi{padding:8px 9px;border-radius:12px;border:1px solid rgba(210,230,255,.10);background:rgba(255,255,255,.04)}
+    .info-kpi .k{font-size:10px;color:var(--muted)}
+    .info-kpi .v{font-size:13px;font-weight:740;margin-top:2px;word-break:break-word}
+    .info-list{display:flex;flex-direction:column;gap:6px;max-height:150px;overflow:auto}
+    .info-row{display:grid;grid-template-columns:1.2fr .8fr .9fr;gap:8px;padding:7px 9px;border-radius:11px;background:rgba(255,255,255,.03);border:1px solid rgba(210,230,255,.08);font-size:12px}
+    .info-note{margin-top:auto;padding-top:8px;border-top:1px solid rgba(210,230,255,.10);color:rgba(210,225,245,.9);font-size:12px;line-height:1.45}
+    .info-chips{display:flex;flex-wrap:wrap;gap:5px}
+    .info-chip{font-size:10px;padding:2px 7px;border-radius:999px;border:1px solid rgba(210,230,255,.14);background:rgba(255,255,255,.05);color:rgba(210,225,250,.92);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .info-chip.ok{border-color:rgba(61,255,176,.24);color:var(--good)}
+    .info-chip.warn{border-color:rgba(255,209,102,.24);color:var(--warn)}
+    .info-chip.bad{border-color:rgba(255,107,138,.24);color:var(--bad)}
+    .mod-card, .kpi, .pos-card, .risk-item, .mode-hero, .alloc, .funds-kpi{
+      transition:box-shadow .16s ease-out;
+    }
+    .earn-card, .info-card{
+      /* default flat; tilt only while hovering via JS classes */
+      transform: perspective(1000px) rotateX(0deg) rotateY(0deg);
+      transform-style: preserve-3d;
+      will-change: auto;
+      transition: transform .14s ease-out, box-shadow .16s ease-out, border-color .16s ease, background .16s ease;
+    }
+    .earn-grid, .info-grid, .mod-grid, .pos-grid, .kpis{
+      perspective: none;
+    }
+    .tilt-on{
+      will-change: transform;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 14px 28px rgba(0,0,0,.24) !important;
+    }
+    .tilt-leave{
+      transition: transform .14s ease-out, box-shadow .14s ease-out !important;
+    }
+    /* while page is scrolling, hard-disable tilt transforms to stop flicker */
+    html.is-scrolling .tilt-on,
+    html.is-scrolling .tilt-leave,
+    html.is-scrolling .mod-card,
+    html.is-scrolling .earn-card,
+    html.is-scrolling .info-card,
+    html.is-scrolling .kpi,
+    html.is-scrolling .pos-card,
+    html.is-scrolling .risk-item,
+    html.is-scrolling .mode-hero,
+    html.is-scrolling .alloc,
+    html.is-scrolling .funds-kpi{
+      transform: none !important;
+      transition: none !important;
+      will-change: auto !important;
+    }
+    @media (max-width:980px){
+      .info-grid{grid-template-columns:1fr}
+      .info-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+    @media (prefers-reduced-motion: reduce){
+      .mod-card, .earn-card, .info-card, .kpi, .pos-card, .risk-item, .mode-hero, .alloc, .funds-kpi{
+        transition:none !important; transform:none !important;
+      }
+    }
+    .funds-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:12px;margin-top:12px}
+    .funds-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    .funds-kpi{padding:10px;border-radius:14px;border:1px solid rgba(210,230,255,.14);background:rgba(255,255,255,.04)}
+    .funds-kpi .k{font-size:11px;color:var(--muted)}
+    .funds-kpi .v{font-size:16px;font-weight:760;margin-top:4px}
+    .funds-kpi .s{font-size:11px;margin-top:4px;color:var(--muted)}
+    .funds-bars{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+    .funds-bar-row{display:grid;grid-template-columns:88px 1fr 92px;gap:8px;align-items:center}
+    .funds-bar-row .n{font-size:12px;color:var(--muted)}
+    .funds-bar-row .a{font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+    .funds-bar{height:10px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}
+    .funds-bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#56e1ff,#6ea8ff 55%,#a78bfa)}
+    .src-list{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto}
+    .src-item{padding:10px;border-radius:14px;border:1px solid rgba(210,230,255,.12);background:rgba(255,255,255,.035)}
+    .src-item .t{display:flex;justify-content:space-between;gap:8px;font-size:12px}
+    .src-item .d{margin-top:4px;color:var(--muted);font-size:11px;line-height:1.4}
+    .pos-contrib{display:flex;flex-direction:column;gap:6px;max-height:360px;overflow:auto}
+    .pos-contrib .row{display:grid;grid-template-columns:1.2fr .8fr .8fr;gap:8px;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.03);border:1px solid rgba(210,230,255,.08);font-size:12px}
+    @media (max-width:980px){
+      .funds-grid{grid-template-columns:1fr}
+      .funds-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+    .mod-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+    .mod-card{
+      position:relative;overflow:hidden;padding:12px;border-radius:16px;
+      border:1px solid rgba(210,230,255,.18);
+      background:
+        linear-gradient(155deg, rgba(255,255,255,.14), rgba(255,255,255,.04) 46%, rgba(126,182,255,.08)),
+        rgba(8,14,28,.30);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.16);
+      min-height:168px;
+      display:flex;flex-direction:column;gap:8px;
+      transform-style:preserve-3d; will-change:transform;
+      transition:transform .12s ease-out, box-shadow .12s ease-out;
+    }
+    .mod-card .mh{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .mod-card .mt{font-weight:760;font-size:14px;line-height:1.25}
+    .mod-card .mid{color:var(--muted);font-weight:600;font-size:11px;margin-left:4px}
+    .mod-card .st{
+      font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;
+      border:1px solid rgba(255,255,255,.14); color:var(--muted);
+      background:rgba(255,255,255,.06); white-space:nowrap;
+    }
+    .mod-card .st.ok{color:var(--good); border-color:rgba(61,255,176,.28); background:rgba(61,255,176,.08)}
+    .mod-card .st.error,.mod-card .st.forbidden{color:var(--bad); border-color:rgba(255,107,138,.28); background:rgba(255,107,138,.08)}
+    .mod-card .st.analyze_only,.mod-card .st.idle,.mod-card .st.skip{color:var(--warn); border-color:rgba(255,209,102,.25); background:rgba(255,209,102,.08)}
+    .mod-card .domain{
+      display:inline-flex;align-items:center;gap:6px;font-size:11px;color:rgba(190,210,240,.88);
+      padding:3px 8px;border-radius:999px;border:1px solid rgba(210,230,255,.12);
+      background:rgba(255,255,255,.04); width:max-content;
+    }
+    .mod-card .kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+    .mod-card .kpi-i{
+      padding:7px 8px;border-radius:12px;border:1px solid rgba(210,230,255,.10);
+      background:rgba(255,255,255,.04);
+    }
+    .mod-card .kpi-i .k{font-size:10px;color:var(--muted);margin-bottom:2px}
+    .mod-card .kpi-i .v{font-size:12px;font-weight:720;color:var(--text);word-break:break-word}
+    .mod-card .meta{color:var(--muted);font-size:11px;line-height:1.4}
+    .mod-card .act{
+      margin-top:auto;font-size:12px;line-height:1.45;color:rgba(220,232,255,.92);
+      padding-top:6px;border-top:1px solid rgba(210,230,255,.10);
+      display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;
+    }
+    .mod-card .acts{display:flex;flex-wrap:wrap;gap:4px}
+    .mod-card .chip{
+      font-size:10px;padding:2px 7px;border-radius:999px;
+      border:1px solid rgba(210,230,255,.14); background:rgba(255,255,255,.05); color:rgba(210,225,250,.9);
+      max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .mod-card .chip.ok{border-color:rgba(61,255,176,.24); color:var(--good)}
+    .mod-card .chip.warn{border-color:rgba(255,209,102,.24); color:var(--warn)}
+    .mod-card .chip.bad{border-color:rgba(255,107,138,.24); color:var(--bad)}
+    @media (max-width:980px){ .mod-grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+    @media (max-width:640px){ .mod-grid{grid-template-columns:1fr} }
+
+  
+    #loginGate{
+      position:fixed; inset:0; z-index:99999;
+      display:flex; align-items:center; justify-content:center;
+      background:
+        radial-gradient(900px 500px at 20% 10%, rgba(110,168,255,.18), transparent 60%),
+        radial-gradient(700px 400px at 80% 90%, rgba(179,156,250,.14), transparent 55%),
+        linear-gradient(160deg, #03050b, #0b1830 55%, #081124);
+      padding:20px;
+    }
+    #loginGate.hidden{display:none !important}
+    .login-card{
+      width:min(420px, 100%);
+      border-radius:22px;
+      border:1px solid rgba(190,220,255,.22);
+      background:linear-gradient(160deg, rgba(255,255,255,.12), rgba(255,255,255,.04));
+      box-shadow:0 24px 60px rgba(0,0,0,.45);
+      padding:28px 24px 22px;
+      backdrop-filter:blur(18px);
+    }
+    .login-card h1{margin:0 0 6px; font-size:22px}
+    .login-card .sub{color:var(--muted); font-size:13px; line-height:1.5; margin-bottom:16px}
+    .login-card label{display:block; font-size:12px; color:var(--muted); margin:10px 0 6px}
+    .login-card input{
+      width:100%; box-sizing:border-box; border-radius:12px;
+      border:1px solid rgba(210,230,255,.18);
+      background:rgba(6,12,24,.55); color:var(--text);
+      padding:11px 12px; font-size:14px;
+    }
+    .login-card input:focus{outline:none; border-color:rgba(126,182,255,.55); box-shadow:0 0 0 3px rgba(110,168,255,.15)}
+    .login-card .login-actions{display:flex; gap:10px; margin-top:16px}
+    .login-card .login-actions button{flex:1}
+    .login-card .login-msg{min-height:1.2em; margin-top:12px; font-size:12px; color:var(--muted)}
+    .login-card .login-msg.bad{color:#ff9bb0}
+    .login-card .login-msg.ok{color:#8dffc0}
+    body.login-locked .shell{visibility:hidden; pointer-events:none}
+    #topLogoutBtn{display:none}
+    body.admin-logged-in #topLogoutBtn{display:inline-flex}
+</style>
+</head>
+<body class="login-locked">
+  <div id="loginGate" aria-live="polite">
+    <div class="login-card">
+      <h1>FZSM 管理登录</h1>
+      <div class="sub">登录后才能进入监控面板。服务器请配置环境变量 <code>FZSM_ADMIN_PASSWORD</code>。</div>
+      <label for="gateUser">用户名</label>
+      <input id="gateUser" type="text" value="admin" autocomplete="username" />
+      <label for="gatePass">密码</label>
+      <input id="gatePass" type="password" placeholder="管理密码" autocomplete="current-password" />
+      <div class="login-actions">
+        <button type="button" class="primary" id="gateLoginBtn" onclick="gateLogin()">登录</button>
+      </div>
+      <div class="login-msg" id="gateMsg">正在检查登录状态…</div>
+    </div>
+  </div>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="side-brand"><div class="logo">AI</div><div class="mini">FZSM</div></div>
+      <nav class="side-nav" id="tabs">
+        <button class="tab on" data-tab="overview" title="1"><span class="ico">📊</span><span class="lbl">总览</span><span class="kbd">1</span></button>
+        <button class="tab" data-tab="positions" title="2"><span class="ico">📁</span><span class="lbl">持仓</span><span class="kbd">2</span></button>
+        <button class="tab" data-tab="signals" title="3"><span class="ico">📡</span><span class="lbl">信号</span><span class="kbd">3</span></button>
+        <button class="tab" data-tab="trades" title="4"><span class="ico">🧾</span><span class="lbl">成交</span><span class="kbd">4</span></button>
+        <button class="tab" data-tab="control" title="5"><span class="ico">🎛️</span><span class="lbl">控制</span><span class="kbd">5</span></button>
+        <button class="tab" data-tab="modules" title="6"><span class="ico">🧩</span><span class="lbl">模块</span><span class="kbd">6</span></button>
+        <button class="tab" data-tab="funds" title="7"><span class="ico">💰</span><span class="lbl">资金</span><span class="kbd">7</span></button>
+        <button class="tab" data-tab="earn" title="8"><span class="ico">💎</span><span class="lbl">赚钱</span><span class="kbd">8</span></button>
+        <button class="tab" data-tab="info" title="9"><span class="ico">🏛️</span><span class="lbl">信息</span></button>
+      </nav>
+    </aside>
+    <div class="main">
+    <header>
+      <div class="brand">
+        <div class="logo">AI</div>
+        <div>
+          <h1>FZSM <em>均衡</em> 监控台</h1>
+          <div class="meta live-meta">
+            <span class="status-chip" id="liveChip" title="服务状态">
+              <span class="dot" id="liveDot"></span>
+              <span class="txt" id="liveText">同步中</span>
+            </span>
+            <span class="spin" id="topSpin"></span>
+            <span id="updated">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="actions">
+        <div class="top-status">
+          <span class="pill" id="modePill">-</span>
+          <span class="pill" id="controlPill">-</span>
+          <span class="pill" id="regimePill">-</span>
+        </div>
+        <button type="button" id="topLogoutBtn" onclick="gateLogout()">退出登录</button>
+        <button class="primary refresh-btn" id="refreshBtn" onclick="refresh(true)" title="R"><span class="spin"></span><span class="label">刷新</span><span class="kbd">R</span></button>
+        <button id="autoBtn" onclick="toggleAuto()" title="自动刷新"><span class="label">自动 开</span></button>
+      </div>
+    </header>
+
+    <div class="kpis">
+      <div class="card kpi">
+        <div class="label"><span>总资产</span><span id="userName">-</span></div>
+        <div class="value" id="equity">-</div>
+        <div class="sub" id="pnl">-</div>
+      </div>
+      <div class="card kpi">
+        <div class="label"><span>现金</span><span>持仓市值</span></div>
+        <div class="value" id="cash">-</div>
+        <div class="sub" id="stockValue">-</div>
+      </div>
+      <div class="card kpi">
+        <div class="label"><span>指数</span><span>本轮信号</span></div>
+        <div class="value" id="indexPrice">-</div>
+        <div class="sub" id="indexChg">-</div>
+      </div>
+      <div class="card kpi">
+        <div class="label"><span>成交统计</span><span id="authInfo">-</span></div>
+        <div class="value" id="tradeStats">-</div>
+        <div class="sub" id="cycleInfo">-</div>
+      </div>
+    </div>
+
+
+    <div class="panel">
+      <section class="view on" id="view-overview">
+        <div class="card chart-card">
+          <div class="card-head"><h2>资产曲线</h2><div class="hint" id="chartHint">-</div></div>
+          <div class="chart-meta">
+            <div class="chart-pills" id="chartRange">
+              <button class="chart-pill" data-range="all" onclick="setChartRange('all')">全部</button>
+              <button class="chart-pill" data-range="6h" onclick="setChartRange('6h')">6小时</button>
+              <button class="chart-pill on" data-range="1h" onclick="setChartRange('1h')">1小时</button>
+            </div>
+            <div class="chart-legend">
+              <span class="eq"><i></i>总资产</span>
+              <span class="cash"><i></i>现金</span>
+            </div>
+          </div>
+          <div class="chart-box"><canvas id="equityChart" width="1200" height="220"></canvas></div>
+          <div class="chart-stats">
+            <div class="chart-stat"><div class="k">总资产</div><div class="v" id="chartEqNow">-</div></div>
+            <div class="chart-stat"><div class="k">现金</div><div class="v" id="chartCashNow">-</div></div>
+            <div class="chart-stat"><div class="k">区间涨跌</div><div class="v" id="chartEqDelta">-</div></div>
+            <div class="chart-stat"><div class="k">样本</div><div class="v" id="chartSamples">-</div></div>
+          </div>
+        </div>
+        <div class="split" style="margin-top:12px">
+          <div class="card">
+            <div class="card-head"><h2>账户快照</h2><div class="hint" id="posHintMini">-</div></div>
+            <div class="alloc">
+              <div class="donut" id="cashDonutMini"><div><b id="cashPctMini">-</b><span>现金占比</span></div></div>
+              <div class="legend" id="allocLegendMini"></div>
+            </div>
+            <div class="note" id="overviewNote">加载中...</div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>快捷控制</h2><div class="hint" id="controlHintMini">-</div></div>
+            <div class="mode-hero">
+              <div>
+                <div class="t" id="modeTitleMini">自动交易</div>
+                <div class="d" id="modeDescMini">自动买卖</div>
+              </div>
+              <span class="pill auto" id="modeBadgeMini">auto</span>
+            </div>
+            <div class="farm-note" id="currentStrategyNoteMini" style="margin-bottom:8px">当前策略：自动交易 · 保留持仓多</div>
+            <div class="control-row">
+              <button id="btnAutoMini" class="primary" onclick="setControl('auto')">自动交易</button>
+              <button id="btnSellOnlyMini" class="warn" onclick="setControl('sell_only')">只卖不买</button>
+              <button id="btnPausedMini" class="danger" onclick="setControl('paused')">暂停交易</button>
+            </div>
+            <div class="control-row" style="margin-top:8px">
+              <button id="btnCashStyleMini" class="warn" onclick="setCapitalStyle('prefer_cash')">保留现金多</button>
+              <button id="btnHoldStyleMini" class="primary" onclick="setCapitalStyle('prefer_hold')">保留持仓多</button>
+              <button id="btnAllStyleMini" onclick="setCapitalStyle('all_in')">全部持仓</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-positions">
+        <div class="card">
+          <div class="card-head"><h2>当前持仓</h2><div class="hint" id="posHint">-</div></div>
+          <div class="alloc">
+            <div class="donut" id="cashDonut"><div><b id="cashPct">-</b><span>现金占比</span></div></div>
+            <div class="legend" id="allocLegend"></div>
+          </div>
+          <div class="pos-grid" id="posBody"><div class="note">暂无持仓</div></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-signals">
+        <div class="card">
+          <div class="card-head"><h2>最新信号</h2><div class="hint" id="sigHint">-</div></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>标的</th><th>动作</th><th>分数</th><th>价格</th><th>理由</th></tr></thead>
+              <tbody id="sigBody"><tr><td colspan="5" class="reason">暂无</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-trades">
+        <div class="card">
+          <div class="card-head"><h2>最近成交</h2><div class="hint" id="tradeHint">-</div></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>时间</th><th>标的</th><th>方向</th><th>数量</th><th>状态</th></tr></thead>
+              <tbody id="tradeBody"><tr><td colspan="5" class="reason">暂无</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="view" id="view-control">
+        <div class="split">
+          <div class="card">
+            <div class="card-head"><h2>交易控制</h2><div class="hint" id="controlHint">-</div></div>
+            <div class="mode-hero">
+              <div>
+                <div class="t" id="modeTitle">自动交易</div>
+                <div class="d" id="modeDesc">自动买卖</div>
+              </div>
+              <span class="pill auto" id="modeBadge">auto</span>
+            </div>
+            <div class="farm-note" id="currentStrategyNote" style="margin-bottom:8px">当前策略：自动交易 · 保留持仓多</div>
+            <div class="farm-note" style="margin-bottom:6px">交易模式</div>
+            <div class="control-row">
+              <button id="btnAuto" class="primary" onclick="setControl('auto')">自动交易</button>
+              <button id="btnSellOnly" class="warn" onclick="setControl('sell_only')">只卖不买</button>
+              <button id="btnPaused" class="danger" onclick="setControl('paused')">暂停交易</button>
+            </div>
+            <div class="farm-note" style="margin-top:8px">资金风格：影响开仓预算与弱信号卖出偏好（硬风控优先）</div>
+            <div class="control-row" id="capitalStyleRow">
+              <button id="btnCashStyle" class="warn" onclick="setCapitalStyle('prefer_cash')">保留现金多</button>
+              <button id="btnHoldStyle" class="primary" onclick="setCapitalStyle('prefer_hold')">保留持仓多</button>
+              <button id="btnAllStyle" onclick="setCapitalStyle('all_in')">全部持仓</button>
+            </div>
+            <div class="farm-note" id="capitalStyleHint">保留持仓多 · 弱卖信号少倒腾</div>
+            <div class="risk-grid">
+              <div class="risk-item"><div class="k">止损</div><div class="v" id="riskStop">-</div></div>
+              <div class="risk-item"><div class="k">止盈</div><div class="v" id="riskTake">-</div></div>
+              <div class="risk-item"><div class="k">移动止损</div><div class="v" id="riskTrail">-</div></div>
+              <div class="risk-item"><div class="k">单仓上限</div><div class="v" id="riskSingle">-</div></div>
+              <div class="risk-item"><div class="k">现金预留</div><div class="v" id="riskCash">-</div></div>
+              <div class="risk-item"><div class="k">每轮新开</div><div class="v" id="riskNew">-</div></div>
+              <div class="risk-item"><div class="k">最大持仓</div><div class="v" id="riskMaxPos">-</div></div>
+              <div class="risk-item"><div class="k">仓位缩放</div><div class="v" id="riskScale">-</div></div>
+              <div class="risk-item"><div class="k">危机减仓</div><div class="v" id="riskReduce">-</div></div>
+            </div>
+            <div class="card-head" style="margin-top:12px"><h2>农场</h2><div class="hint" id="farmHint">-</div></div>
+            <div class="farm-grid">
+              <div class="farm-item"><div class="k">空地</div><div class="v" id="farmEmpty">-</div></div>
+              <div class="farm-item"><div class="k">生长中</div><div class="v" id="farmGrowing">-</div></div>
+              <div class="farm-item"><div class="k">可收获</div><div class="v" id="farmReady">-</div></div>
+              <div class="farm-item"><div class="k">本轮种植</div><div class="v" id="farmPlanted">-</div></div>
+              <div class="farm-item"><div class="k">本轮收获</div><div class="v" id="farmHarvested">-</div></div>
+              <div class="farm-item"><div class="k">本轮偷菜</div><div class="v" id="farmStolen">-</div></div>
+              <div class="farm-item"><div class="k">作物</div><div class="v" id="farmCrop">-</div></div>
+              <div class="farm-item"><div class="k">偷菜剩余</div><div class="v" id="farmStealLeft">-</div></div>
+              <div class="farm-item"><div class="k">错误</div><div class="v" id="farmErrors">-</div></div>
+            </div>
+            <div class="farm-note" id="farmNote">自动种植 / 收获 / 偷菜</div>
+            <div class="farm-note" style="margin-top:10px">赚钱功能开关（写入本地，下一轮 bot 生效）</div>
+            <div class="flag-row" id="featureFlagPanel"><span class="note">加载中...</span></div>
+            <div class="farm-note" id="sideNote">侧线: IPO/对赌/基金</div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>服务状态</h2><div class="hint" id="svcHint">-</div></div>
+            <pre class="logbox" id="serviceBox">???...</pre>
+            <div class="farm-note" style="margin-top:10px">Cookie 保活</div>
+            <div class="flag-row" id="authKeepaliveBox"><span class="note">加载中...</span></div>
+
+            <div class="cookie-mgr" id="cookieManageBox">
+              <h3>Cookie 管理</h3>
+              <div class="farm-note">前端通过本地接口读写 cookie 文件，供 bot 与保活共用；列表默认脱敏，不显示完整密钥。</div>
+              <div class="cookie-kpis">
+                <div class="cookie-kpi"><div class="k">文件</div><div class="v" id="cookiePath">-</div></div>
+                <div class="cookie-kpi"><div class="k">条数</div><div class="v" id="cookieCount">-</div></div>
+                <div class="cookie-kpi"><div class="k">鉴权模式</div><div class="v" id="cookieAuthMode">-</div></div>
+                <div class="cookie-kpi"><div class="k">最近修改</div><div class="v" id="cookieMtime">-</div></div>
+              </div>
+              <div class="farm-note" style="margin-top:4px">脱敏列表</div>
+              <div class="cookie-list" id="cookieListBox"><div class="note">加载中…</div></div>
+              <div class="farm-note">导入内容（支持 JSON / name=value / 直接粘贴 cookie 原值）</div>
+              <textarea id="cookieImportText" placeholder="直接粘贴 fz_lottery 的完整值，或 JSON / name=value"></textarea>
+              <div class="cookie-actions">
+                <button type="button" class="primary" id="btnCookieRefresh" onclick="refreshCookieManager()">刷新状态</button>
+                <button type="button" class="primary" id="btnCookieProbe" onclick="probeCookies()">仅探测</button>
+                <button type="button" class="warn" id="btnCookieImport" onclick="importCookies()">导入并探测</button>
+                <button type="button" class="danger" id="btnCookieClear" onclick="clearCookies()">清除</button>
+              </div>
+              <div class="cookie-msg" id="cookieMgrMsg">准备就绪</div>
+              <div class="farm-note" id="cookieMgrHint">导入后写入 auth/cookies.json；清除前会自动备份。</div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+      <section class="view" id="view-modules">
+        <div class="card">
+          <div class="card-head">
+            <h2>功能区前端</h2>
+            <div class="hint" id="modHint">-</div>
+          </div>
+          <div class="mod-sum" id="modSum">
+            <span class="pillx" id="modTotal">模块 -</span>
+            <span class="pillx" id="modOk">正常 -</span>
+            <span class="pillx" id="modErr">错误 -</span>
+            <span class="pillx" id="modBias">偏置 -</span>
+          </div>
+          <div class="mod-grid" id="modGrid"><div class="note">加载中...</div></div>
+          <div class="farm-note" id="modNote">每个功能区一张详情卡：状态 / 指标 / 动作</div>
+        </div>
+      </section>
+
+      <section class="view" id="view-funds">
+        <div class="card">
+          <div class="card-head">
+            <h2>资金构成与变化来源</h2>
+            <div class="hint" id="fundsHint">-</div>
+          </div>
+          <div class="funds-kpis" id="fundsKpis">
+            <div class="funds-kpi"><div class="k">总资产</div><div class="v" id="fEquity">-</div><div class="s" id="fEquityDelta">-</div></div>
+            <div class="funds-kpi"><div class="k">现金</div><div class="v" id="fCash">-</div><div class="s" id="fCashDelta">-</div></div>
+            <div class="funds-kpi"><div class="k">持仓市值</div><div class="v" id="fStock">-</div><div class="s" id="fStockDelta">-</div></div>
+            <div class="funds-kpi"><div class="k">恒等式差额</div><div class="v" id="fGap">-</div><div class="s" id="fFormula">总资产≈现金+持仓</div></div>
+          </div>
+          <div class="funds-grid">
+            <div>
+              <div class="card-head" style="padding:0;margin-top:12px"><h2 style="font-size:15px">资产构成</h2><div class="hint" id="fundsCompHint">现金 vs 持仓</div></div>
+              <div class="funds-bars" id="fundsBars"></div>
+              <div class="card-head" style="padding:0;margin-top:14px"><h2 style="font-size:15px">变化来源</h2><div class="hint">相对上一快照 + 持仓贡献</div></div>
+              <div class="src-list" id="fundsChanges"><div class="note">加载中...</div></div>
+            </div>
+            <div>
+              <div class="card-head" style="padding:0;margin-top:12px"><h2 style="font-size:15px">持仓浮盈贡献</h2><div class="hint" id="fundsPosHint">-</div></div>
+              <div class="pos-contrib" id="fundsPos"><div class="note">加载中...</div></div>
+              <div class="card-head" style="padding:0;margin-top:14px"><h2 style="font-size:15px">模块资金影响</h2><div class="hint">解释项，非重复记账</div></div>
+              <div class="src-list" id="fundsModules"><div class="note">加载中...</div></div>
+            </div>
+          </div>
+          <div class="card-head" style="padding:0;margin-top:14px"><h2 style="font-size:15px">最近资金事件（成交）</h2><div class="hint" id="fundsTradeHint">-</div></div>
+          <div class="src-list" id="fundsEvents" style="max-height:240px"><div class="note">加载中...</div></div>
+          <div class="farm-note" id="fundsNote">资金变化归因：构成 / 快照差额 / 持仓贡献 / 成交现金流 / 模块影响</div>
+        </div>
+      </section>
+
+      <section class="view" id="view-earn">
+        <div class="card">
+          <div class="card-head">
+            <h2>赚钱域专属面板</h2>
+            <div class="hint" id="earnHint">抽奖 / 券商 / 农场 / 期货 / 侧线</div>
+          </div>
+          <div class="earn-grid" id="earnGrid">
+            <div class="note">加载中...</div>
+          </div>
+          <div class="farm-note" id="earnNote">赚钱域：每个功能区独立大卡，展示状态 / EV / 动作 / 关键指标</div>
+        </div>
+      </section>
+
+      <section class="view" id="view-info">
+        <div class="card">
+          <div class="card-head">
+            <h2>信息 / 治理域专属面板</h2>
+            <div class="hint" id="infoHint">日历 / 排行 / 荣誉 / 大会 / 治理 / 后台</div>
+          </div>
+          <div class="info-grid" id="infoGrid"><div class="note">加载中...</div></div>
+          <div class="farm-note" id="infoNote">信息与治理：状态 / 关键指标 / 最近动作</div>
+        </div>
+      </section>
+
+
+    </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"><div class="toast-title" id="toastTitle">提示</div><div class="toast-msg" id="toastMsg">-</div><div class="toast-bar"><i></i></div></div>
+  <div class="modal-mask" id="modalMask" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <h3 id="modalTitle">确认切换</h3>
+      <p id="modalDesc">-</p>
+      <div class="hotkeys">Enter 确认 · Esc 取消</div>
+      <div class="modal-actions">
+        <button id="modalCancel" type="button">取消</button>
+        <button id="modalOk" class="primary" type="button">确认</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+let auto = true, timer = null, currentTab = 'overview', refreshing = false, pendingControl = null, toastTimer = null;
+const refreshSec = Number(%%REFRESH_SEC%%);
+const PALETTE = ['#6ea8ff','#3dffb0','#a78bfa','#ffd166','#56e1ff','#ff6bcb','#8b9cff','#7dffa8'];
+const TAB_ORDER=['overview','positions','signals','trades','control','modules','funds','earn','info'];
+const MODE_TEXT = {
+  auto: ['自动交易', '按策略自动买卖'],
+  sell_only: ['只卖不买', '只平仓，不开新仓'],
+  paused: ['暂停交易', '停止全部下单']
+};
+const MODE_CONFIRM = {
+  sell_only: ['切到只卖？', '只平仓，不再开新仓。'],
+  paused: ['暂停交易？', '停止全部下单。'],
+  auto: ['恢复自动？', '按策略自动买卖。']
+};
+
+function fmt(n,d=2){ if(n===null||n===undefined||n==='')return '-'; const x=Number(n); return Number.isNaN(x)?String(n):x.toLocaleString(undefined,{maximumFractionDigits:d}); }
+function pct(n){ if(n===null||n===undefined||n==='')return '-'; const x=Number(n); if(Number.isNaN(x))return '-'; const v = Math.abs(x) >= 1 ? x : (x*100); return (v>=0?'+':'')+v.toFixed(2)+'%'; }
+function fmtPctRatio(n){ if(n===null||n===undefined||n==='')return '-'; const x=Number(n); if(Number.isNaN(x))return '-'; return (x*100).toFixed(0)+'%'; }
+function setText(id,v){ const el=document.getElementById(id); if(el) el.textContent=v; }
+function clsPnl(n){ const x=Number(n||0); return x>0?'good':(x<0?'bad':''); }
+function ts(t){ if(!t)return '-'; const x=Number(t)>1e12?Number(t):Number(t)*1000; return new Date(x).toLocaleString(); }
+function setRefreshing(on, manual=false){
+  refreshing = !!on;
+  const shell=document.querySelector('.shell');
+  if(shell){
+    shell.classList.toggle('refreshing', refreshing);
+    shell.classList.toggle('manual', refreshing && !!manual);
+    shell.classList.remove('busy');
+  }
+  const btn=document.getElementById('refreshBtn');
+  if(btn){
+    // only manual shows a light spinner; never gray out the page
+    btn.classList.toggle('busy', refreshing && !!manual);
+    btn.disabled = refreshing && !!manual;
+  }
+}
+function setTextIfChanged(id, value){
+  const el=document.getElementById(id);
+  if(!el) return false;
+  const next = value==null ? '' : String(value);
+  if(el.textContent === next) return false;
+  el.textContent = next;
+  return true;
+}
+
+let chartRange='1h';
+let chartSeriesCache=[];
+let chartSig='';
+
+function setChartRange(range){
+  chartRange=range||'all';
+  document.querySelectorAll('#chartRange .chart-pill').forEach(btn=>{
+    btn.classList.toggle('on', btn.getAttribute('data-range')===chartRange);
+  });
+  drawEquityChart(chartSeriesCache, true);
+}
+
+function filterSeriesByRange(series, range){
+  const arr=Array.isArray(series)?series.slice():[];
+  if(!arr.length || range==='all') return arr;
+  const now = Number(arr[arr.length-1].ts||Date.now()/1000);
+  const win = range==='1h' ? 3600 : range==='6h' ? 21600 : 0;
+  if(!win) return arr;
+  return arr.filter(p=>Number(p.ts||0) >= now-win);
+}
+
+function niceNum(n){
+  if(!isFinite(n)) return 0;
+  const abs=Math.abs(n)||1;
+  const exp=Math.floor(Math.log10(abs));
+  const f=abs/Math.pow(10,exp);
+  let nf=1;
+  if(f<1.5) nf=1; else if(f<3) nf=2; else if(f<7) nf=5; else nf=10;
+  return nf*Math.pow(10,exp);
+}
+
+function drawEquityChart(series, force){
+  const canvas=document.getElementById('equityChart');
+  if(!canvas) return;
+  const data=filterSeriesByRange(series, chartRange);
+  const sig=[chartRange, data.length, data[0]?.ts, data[data.length-1]?.ts, data[0]?.equity, data[data.length-1]?.equity, data[data.length-1]?.cash].join('|');
+  if(!force && sig===chartSig) return;
+  chartSig=sig;
+
+  const dpr=window.devicePixelRatio||1;
+  const cssW=canvas.clientWidth||1200;
+  const cssH=canvas.clientHeight||220;
+  if(canvas.width!==Math.floor(cssW*dpr) || canvas.height!==Math.floor(cssH*dpr)){
+    canvas.width=Math.floor(cssW*dpr);
+    canvas.height=Math.floor(cssH*dpr);
+  }
+  const ctx=canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  // glass grid background already on box; draw axes grid
+  const pad={l:76,r:14,t:16,b:26};
+  const w=cssW-pad.l-pad.r;
+  const h=cssH-pad.t-pad.b;
+  if(w<=10 || h<=10){
+    setTextIfChanged('chartHint','-');
+    setTextIfChanged('chartSamples','0');
+    return;
+  }
+
+  if(!data.length){
+    ctx.fillStyle='rgba(176,192,214,.75)';
+    ctx.font='12px ui-sans-serif,system-ui';
+    ctx.fillText('暂无资产样本', pad.l, pad.t+20);
+    setTextIfChanged('chartHint','无数据');
+    setTextIfChanged('chartEqNow','-');
+    setTextIfChanged('chartCashNow','-');
+    setTextIfChanged('chartEqDelta','-');
+    setTextIfChanged('chartSamples','0');
+    return;
+  }
+
+  const xs=data.map(p=>Number(p.ts||0));
+  const eq=data.map(p=>Number(p.equity));
+  const cash=data.map(p=>Number(p.cash));
+  const vals=[...eq,...cash].filter(v=>isFinite(v));
+  let minV=Math.min(...vals), maxV=Math.max(...vals);
+  if(!(isFinite(minV)&&isFinite(maxV))){ minV=0; maxV=1; }
+  if(minV===maxV){ minV*=0.98; maxV*=1.02; if(minV===maxV){minV=0; maxV=1;} }
+  const padV=(maxV-minV)*0.08;
+  minV-=padV; maxV+=padV;
+  const span=Math.max(maxV-minV, 1e-9);
+  const minX=Math.min(...xs), maxX=Math.max(...xs);
+  const spanX=Math.max(maxX-minX, 1);
+
+  const xAt=t=>pad.l + ((t-minX)/spanX)*w;
+  const yAt=v=>pad.t + (1-((v-minV)/span))*h;
+
+  // grid
+  ctx.lineWidth=1;
+  const ticks=4;
+  for(let i=0;i<=ticks;i++){
+    const y=pad.t + (h*i/ticks);
+    ctx.strokeStyle='rgba(210,230,255,.08)';
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(pad.l+w,y); ctx.stroke();
+    const val=maxV - (span*i/ticks);
+    ctx.fillStyle='rgba(176,192,214,.72)';
+    ctx.font='11px ui-sans-serif,system-ui';
+    ctx.textAlign='right';
+    ctx.fillText(fmt(val,0), pad.l-8, y+4);
+  }
+
+  function strokeLine(arr, color, fill){
+    const pts=[];
+    for(let i=0;i<arr.length;i++){
+      const v=arr[i];
+      if(!isFinite(v)) continue;
+      pts.push([xAt(xs[i]), yAt(v)]);
+    }
+    if(pts.length<2) return;
+    if(fill){
+      const g=ctx.createLinearGradient(0,pad.t,0,pad.t+h);
+      g.addColorStop(0, fill);
+      g.addColorStop(1, 'rgba(86,225,255,0)');
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pad.t+h);
+      pts.forEach(p=>ctx.lineTo(p[0], p[1]));
+      ctx.lineTo(pts[pts.length-1][0], pad.t+h);
+      ctx.closePath();
+      ctx.fillStyle=g;
+      ctx.fill();
+    }
+    ctx.beginPath();
+    pts.forEach((p,i)=>{ if(i===0) ctx.moveTo(p[0],p[1]); else ctx.lineTo(p[0],p[1]); });
+    ctx.strokeStyle=color;
+    ctx.lineWidth=2;
+    ctx.lineJoin='round';
+    ctx.lineCap='round';
+    ctx.shadowColor=color;
+    ctx.shadowBlur=8;
+    ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+
+  strokeLine(eq, '#56e1ff', 'rgba(86,225,255,.18)');
+  strokeLine(cash, '#6ea8ff', null);
+
+  // x labels
+  ctx.fillStyle='rgba(176,192,214,.72)';
+  ctx.font='11px ui-sans-serif,system-ui';
+  ctx.textAlign='left';
+  ctx.fillText(ts(minX).slice(5), pad.l, cssH-8);
+  ctx.textAlign='right';
+  ctx.fillText(ts(maxX).slice(5), pad.l+w, cssH-8);
+
+  const eq0=eq.find(v=>isFinite(v));
+  const eq1=[...eq].reverse().find(v=>isFinite(v));
+  const cash1=[...cash].reverse().find(v=>isFinite(v));
+  const delta=(isFinite(eq0)&&isFinite(eq1))?(eq1-eq0):null;
+  const deltaPct=(isFinite(eq0)&&eq0)?(delta/eq0):null;
+  setTextIfChanged('chartEqNow', fmt(eq1));
+  setTextIfChanged('chartCashNow', fmt(cash1));
+  if(delta==null){
+    setTextIfChanged('chartEqDelta','-');
+  }else{
+    const cls=delta>=0?'good':'bad';
+    const el=document.getElementById('chartEqDelta');
+    if(el){
+      const txt=`${delta>=0?'+':''}${fmt(delta)} (${deltaPct==null?'-':((deltaPct>=0?'+':'')+(deltaPct*100).toFixed(2)+'%')})`;
+      if(el.textContent!==txt) el.textContent=txt;
+      el.className='v '+(delta>=0?'good':'bad');
+    }
+  }
+  setTextIfChanged('chartSamples', String(data.length));
+  setTextIfChanged('chartHint', `${ts(minX).slice(5)} → ${ts(maxX).slice(5)}`);
+}
+
+function setHtmlIfChanged(el, html){
+  if(!el) return false;
+  const next = html==null ? '' : String(html);
+  if(el.dataset.cacheHtml === next) return false;
+  el.dataset.cacheHtml = next;
+  el.innerHTML = next;
+  return true;
+}
+function setStylePropIfChanged(el, prop, value){
+  if(!el) return false;
+  const next = value==null ? '' : String(value);
+  if(el.style.getPropertyValue(prop) === next) return false;
+  el.style.setProperty(prop, next);
+  return true;
+}
+function setLiveStatus(ok, text){
+  const chip=document.getElementById('liveChip');
+  const dot=document.getElementById('liveDot');
+  const nextDot = 'dot' + (ok ? '' : ' off');
+  if(dot && dot.className !== nextDot) dot.className = nextDot;
+  if(chip){
+    const off = !ok;
+    if(chip.classList.contains('is-off') !== off) chip.classList.toggle('is-off', off);
+    const title = ok ? '服务在线' : (text || '服务离线');
+    if(chip.title !== title) chip.title = title;
+  }
+  // online: only green dot; offline: show short reason
+  setTextIfChanged('liveText', ok ? '' : (text || '离线'));
+}
+function setClassIfChanged(el, cls){
+  if(!el) return false;
+  const next = cls==null ? '' : String(cls);
+  if(el.className === next) return false;
+  el.className = next;
+  return true;
+}
+function setPill(el,text,cls){
+  if(!el) return;
+  const nextCls = 'pill ' + (cls||'');
+  const nextText = text==null ? '' : String(text);
+  if(el.className === nextCls && el.textContent === nextText) return;
+  el.className = nextCls;
+  el.textContent = nextText;
+}
+function toast(msg, type='ok', title){
+  const el=document.getElementById('toast');
+  const titles={ok:'完成', err:'失败', warn:'注意', info:'提示'};
+  document.getElementById('toastTitle').textContent = title || titles[type] || '提示';
+  document.getElementById('toastMsg').textContent = msg;
+  el.className = 'toast show ' + (type||'info');
+  const bar=el.querySelector('.toast-bar');
+  if(bar){ bar.innerHTML='<i></i>'; }
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'), 2200);
+}
+function openModal(mode){
+  pendingControl = mode;
+  const info = MODE_CONFIRM[mode] || ['确认操作？','继续执行该切换。'];
+  document.getElementById('modalTitle').textContent = info[0];
+  document.getElementById('modalDesc').textContent = info[1];
+  const ok=document.getElementById('modalOk');
+  ok.className = 'primary' + (mode==='paused'?' danger':(mode==='sell_only'?' warn':''));
+  document.getElementById('modalMask').classList.add('show');
+  setTimeout(()=>ok.focus(), 30);
+}
+function closeModal(){
+  pendingControl = null;
+  document.getElementById('modalMask').classList.remove('show');
+}
+async function confirmModal(){
+  const mode = pendingControl;
+  closeModal();
+  if(mode) await applyControl(mode);
+}
+
+function switchTab(name, opts={}){
+  if(!TAB_ORDER.includes(name)) return;
+  if(currentTab===name && !opts.force) return;
+  currentTab = name;
+  // cookie-mgr-tab-hook
+  if(name==='control') setTimeout(()=>refreshCookieManager({silent:true}), 30);
+  document.querySelectorAll('.tab').forEach(btn => btn.classList.toggle('on', btn.dataset.tab===name));
+  document.querySelectorAll('.view').forEach(v => {
+    const on = v.id==='view-'+name;
+    if(on){
+      v.classList.add('on');
+    }else{
+      v.classList.remove('on');
+    }
+  });
+  try{ localStorage.setItem('fzsm_tab', name); }catch(e){}
+  if(!opts.silent){
+    const map={overview:'总览',positions:'持仓',signals:'信号',trades:'成交',control:'控制'};
+    // no toast spam on tab switch
+  }
+}
+
+function markControlButtons(mode){
+  mode = MODE_TEXT[mode] ? mode : 'auto';
+  window.__lastControl = Object.assign({}, window.__lastControl || {}, {trade_mode: mode});
+  const map = {
+    auto: ['btnAuto','btnAutoMini'],
+    sell_only: ['btnSellOnly','btnSellOnlyMini'],
+    paused: ['btnPaused','btnPausedMini']
+  };
+  ['btnAuto','btnSellOnly','btnPaused','btnAutoMini','btnSellOnlyMini','btnPausedMini'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.classList.toggle('active', (map[mode]||[]).includes(id));
+  });
+  const info = MODE_TEXT[mode] || MODE_TEXT.auto;
+  setTextIfChanged('modeTitle', info[0]);
+  setTextIfChanged('modeTitleMini', info[0]);
+  setTextIfChanged('modeDesc', info[1]);
+  setTextIfChanged('modeDescMini', info[1]);
+  ['modeBadge','modeBadgeMini'].forEach(id => setPill(document.getElementById(id), info[0], mode));
+  setTextIfChanged('controlHint', '当前：' + info[0]);
+  setTextIfChanged('controlHintMini', '当前：' + info[0]);
+  updateCurrentStrategyNote();
+}
+
+function setControlButtonsBusy(on){
+  ['btnAuto','btnSellOnly','btnPaused','btnAutoMini','btnSellOnlyMini','btnPausedMini'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.disabled = !!on;
+    el.classList.toggle('busy', !!on);
+  });
+}
+
+
+const CAPITAL_TEXT = {
+  prefer_cash: ['保留现金多', '赚钱时优先兑现/提高现金预留'],
+  prefer_hold: ['保留持仓多', '弱卖信号少倒腾'],
+  all_in: ['全部持仓', '更高仓位，按信号换仓']
+};
+function markCapitalStyle(style){
+  style = CAPITAL_TEXT[style] ? style : 'prefer_hold';
+  window.__lastControl = Object.assign({}, window.__lastControl || {}, {capital_style: style});
+  const map = {
+    prefer_cash: ['btnCashStyle','btnCashStyleMini'],
+    prefer_hold: ['btnHoldStyle','btnHoldStyleMini'],
+    all_in: ['btnAllStyle','btnAllStyleMini']
+  };
+  ['btnCashStyle','btnHoldStyle','btnAllStyle','btnCashStyleMini','btnHoldStyleMini','btnAllStyleMini'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.classList.toggle('active', (map[style]||[]).includes(id));
+  });
+  const info = CAPITAL_TEXT[style];
+  setTextIfChanged('capitalStyleHint', '当前资金风格：' + info[0] + ' · ' + info[1]);
+  updateCurrentStrategyNote();
+}
+function updateCurrentStrategyNote(){
+  const mode = (window.__lastControl && window.__lastControl.trade_mode) || 'auto';
+  const style = (window.__lastControl && window.__lastControl.capital_style) || 'prefer_hold';
+  const modeTxt = (MODE_TEXT[mode] || MODE_TEXT.auto)[0];
+  const styleTxt = (CAPITAL_TEXT[style] || CAPITAL_TEXT.prefer_hold)[0];
+  const line = '当前策略：' + modeTxt + ' · ' + styleTxt;
+  setTextIfChanged('currentStrategyNote', line);
+  setTextIfChanged('currentStrategyNoteMini', line);
+  setTextIfChanged('controlHint', line);
+  setTextIfChanged('controlHintMini', line);
+}
+async function setCapitalStyle(style){
+  try{
+    const cur = (window.__lastControl || {});
+    const body = {
+      trade_mode: cur.trade_mode || 'auto',
+      capital_style: style
+    };
+    const r = await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||'failed');
+    window.__lastControl = d.control || body;
+    markCapitalStyle(style);
+    toast((CAPITAL_TEXT[style]||[style])[0], 'ok', '资金风格已更新');
+    await refresh(true);
+  }catch(e){
+    toast(e.message||String(e), 'err', '资金风格失败');
+  }
+}
+
+function setControl(mode){
+  const current = (window.__lastControl && window.__lastControl.trade_mode) || 'auto';
+  if(current === mode){
+    toast('已是当前交易模式', 'info', (MODE_TEXT[mode]||MODE_TEXT.auto)[0]);
+    return;
+  }
+  openModal(mode);
+}
+
+async function applyControl(mode){
+  setControlButtonsBusy(true);
+  try{
+    const r = await fetch('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trade_mode:mode, capital_style:(window.__lastControl&&window.__lastControl.capital_style)||'prefer_hold'})});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error||'failed');
+    markControlButtons(mode);
+    toast((MODE_TEXT[mode]||[mode])[0], 'ok', '已切换');
+    document.querySelectorAll('.mode-hero').forEach(el=>{
+      el.classList.remove('flash');
+      void el.offsetWidth;
+      el.classList.add('flash');
+    });
+    await refresh(true);
+  }catch(e){
+    toast(e.message||String(e), 'err', '切换失败');
+  }finally{
+    setControlButtonsBusy(false);
+  }
+}
+
+
+  function zhStatus(st){
+    const map = {
+      ok:'\u6b63\u5e38', error:'\u9519\u8bef', forbidden:'\u65e0\u6743\u9650', unauthorized:'\u672a\u6388\u6743',
+      analyze_only:'\u5206\u6790\u6a21\u5f0f', idle:'\u7a7a\u95f2', skip:'\u8df3\u8fc7', probe_only:'\u4ec5\u63a2\u9488',
+      disabled:'\u5df2\u5173\u95ed', submitted:'\u5df2\u63d0\u4ea4', filled:'\u5df2\u6210\u4ea4', rejected:'\u5df2\u62d2\u7edd',
+      pending:'\u5f85\u5904\u7406', running:'\u8fd0\u884c\u4e2d', paused:'\u5df2\u6682\u505c', crash:'\u5d29\u6e83',
+      paper:'\u6a21\u62df', live:'\u5b9e\u76d8', auto:'\u81ea\u52a8', stop:'\u505c\u6b62', sell_only:'\u53ea\u5356',
+      risk_on:'\u98ce\u63a7\u5f00', risk_off:'\u98ce\u63a7\u5173', warn:'\u8b66\u544a', neutral:'\u4e2d\u6027',
+      act:'\u52a8\u4f5c', change:'\u53d8\u5316', partial:'\u90e8\u5206\u6210\u4ea4', canceled:'\u5df2\u53d6\u6d88',
+      cancelled:'\u5df2\u53d6\u6d88', open:'\u5f00\u4ed3', closed:'\u5df2\u5e73\u4ed3', success:'\u6210\u529f',
+      failed:'\u5931\u8d25', timeout:'\u8d85\u65f6'
+    };
+    st = String(st==null?'':st);
+    const low = st.toLowerCase();
+    return map[st] || map[low] || st || '-';
+  }
+  function humanizeToken(tok){
+    tok = String(tok==null?'':tok).trim();
+    if(!tok) return '';
+    const dict = {
+      free:'免费', draws:'抽奖次数', draw:'抽奖', premium:'高级', free_draws:'免费抽次数',
+      premium_free:'高级免费次数', high:'高', variance:'波动', default:'默认', off:'关闭',
+      on:'开启', need:'需要', rtp:'RTP', edge:'优势', proof:'证明', already:'已经',
+      checked:'签到', or:'或', disabled:'未开启', insufficient:'不足', balance:'余额',
+      bal:'余额', min:'最低', asset:'资产', cash:'现金', deposit:'保证金',
+      min_asset:'最低资产', trade_enabled:'交易开关', executable:'可执行', plan:'计划',
+      ready:'就绪', set:'设为', true:'开启', false:'关闭', pilot:'试运行', live:'实盘',
+      margin:'保证金', no:'无', signed:'已签约', broker:'券商', yet:'暂无',
+      auto:'自动', claim:'领取', public:'公开', api:'接口', observed:'观测到',
+      response:'响应', only:'仅', risk:'风险', high_risk:'高风险', never:'永不',
+      write:'写入', probe:'探针', range:'范围', today:'今日', week:'本周', all:'全部',
+      compare:'对比', vs:'对比', farm:'农场', spot:'现货', ipo:'IPO', opportunity:'机会',
+      cost:'成本', enable:'启用', lottery:'抽奖', auto_deposit:'自动存入', yield:'收益',
+      beats:'优于', alternatives:'替代方案', manual:'手动', gate:'门槛',
+      borrow:'借款', offers:'挂单', zero:'零', rate:'利率', best:'最佳',
+      negative:'负', ineligible:'不可用', empty:'空', list:'列表', missing:'缺失',
+      use:'改用', events:'事件', news:'新闻', endpoint:'接口', rankings:'排名',
+      loaded:'已加载', track:'路径', title:'称号', near:'接近', complete:'完成',
+      initiate:'发起', accept:'接受', underwriter:'承销', register:'注册', like:'点赞',
+      bias:'偏置', dedicated:'专用', calendar:'日历', median:'中位数', below:'低于',
+      far:'远', leaderboard:'排行榜', aggression:'进攻系数', mood:'情绪',
+      source:'数据源', mode:'模式', observe:'观察', actionable:'可行动',
+      suggest:'建议', sign:'签约', slot:'老虎机', yolo:'搏一搏', nailong:'奶龙机',
+      vip:'VIP', join:'加入', scan:'扫描', bankruptcy:'破产保护', leaderboard:'排行榜',
+      checkin:'签到', crop:'作物', plant:'种植', harvest:'收获', steal:'偷菜',
+      open:'开仓', close:'平仓', vote:'投票', admin:'后台', write_ops:'写操作',
+      calendar:'日历', honors:'荣誉', meeting:'大会', governance:'治理'
+    };
+    if(dict[tok]) return dict[tok];
+    if(/^[a-z]+(?:_[a-z0-9]+)+$/i.test(tok)){
+      return tok.split('_').map(humanizeToken).filter(Boolean).join('');
+    }
+    return tok;
+  }
+  function zhAction(act){
+    const map = {
+      signal_ev_summary:'信号EV摘要', checkin:'签到', draw:'抽奖', draw_premium:'高级抽奖',
+      loan:'借贷', loan_scan:'借贷扫描', deposit:'存入理财', bankruptcy:'破产保护',
+      slot:'老虎机', slot_spin:'老虎机转动', yolo:'搏一搏', nailong:'奶龙机', vip_join:'加入VIP',
+      underwriter_list:'承销列表', register_broker:'注册券商', like:'点赞券商',
+      suggest_sign_broker:'建议签约券商', events_neutral:'事件情绪中性', news_loaded:'新闻情绪已加载',
+      calendar_endpoint_missing_use_events_news:'数据源：事件+新闻（无专用日历接口）',
+      bias:'偏置分析', bias_analyze:'偏置分析', events_loaded:'事件已加载', news_loaded:'新闻已加载', broker_me_loaded:'券商资料已加载', broker_list_loaded:'券商列表已加载', candidates_loaded:'候选人已加载', loan_offers_loaded:'借贷挂单已加载', slot_config_loaded:'老虎机配置已加载', vip_state_loaded:'VIP状态已加载', side_lists_loaded:'侧线列表已加载', public_list_unavailable:'无公开大会列表', holdings_scan_pending:'等待持仓大会扫描', bias_loaded:'榜单偏置已更新',
+      leaderboard_loaded:'排行榜已加载', asset_leaderboard_loaded:'资产榜已加载', farm_rankings_loaded:'农场榜已加载', lottery_leaderboard_today_loaded:'抽奖榜今日已加载', lottery_leaderboard_week_loaded:'抽奖榜本周已加载', lottery_leaderboard_all_loaded:'抽奖榜全部已加载', vip_leaderboard_loaded:'VIP榜已加载',
+      honors_me_loaded:'荣誉已加载', no_near_complete:'暂无接近完成',
+      vip_title_track:'VIP称号路径', auto_claim:'自动领取',
+      no_active_meeting_for_holdings:'持仓无活跃大会', empty:'空列表',
+      auto_initiate_or_accept:'自动发起/接受', admin_probe:'后台探针',
+      admin_write_ops:'后台写操作', crop:'作物', plant:'种植', harvest:'收获',
+      steal:'偷菜', scan:'扫描', probe:'探针', open:'开仓', close:'平仓',
+      vote:'投票', register:'注册', leaderboard:'排行榜'
+    };
+    act = String(act==null?'':act);
+    if(!act) return '';
+    if(map[act]) return map[act];
+    if(/_loaded$/i.test(act)){
+      const base=act.replace(/_loaded$/i,'');
+      const baseZh=map[base]||humanizeToken(base);
+      return baseZh + '已加载';
+    }
+    return humanizeToken(act);
+  }
+  function zhReason(r){
+    r = String(r==null?'':r).trim();
+    if(!r) return '';
+    const map = {
+      already_checked_or_disabled:'今日已签到',
+      empty:'列表为空',
+      analyze_only:'分析模式，不下单',
+      no_dedicated_calendar_api:'暂无专用日历接口，改用事件/新闻',
+      calendar_use_events_news:'数据源：事件+新闻',
+      no_public_meeting_list_api:'无公开股东大会列表接口',
+      waiting_position_meeting_scan:'等待持仓大会扫描',
+      mood_neutral:'情绪中性',
+      mood_bullish:'情绪偏多',
+      mood_bearish:'情绪偏空',
+      mood_soft_risk_off:'情绪偏防守',
+      far_below_leaderboard_median:'远低于榜单中位数',
+      below_leaderboard_median:'低于榜单中位数',
+      outside_top100:'未进前100',
+      in_top100:'位于前100',
+      top10_aggressive:'前10，进攻加强',
+      top30_mild:'前30，轻度进攻',
+      disabled:'功能未开启',
+      forbidden:'无权限',
+      unauthorized:'未授权',
+      need_rtp_edge_proof:'默认关：高波动，需RTP优势或手动开关',
+      slot_default_off_need_rtp_or_manual:'默认关：老虎机不自动转，开关在赚钱/控制页',
+      high_variance_default_off:'高波动玩法默认关闭',
+      default_no_auto_borrow:'默认不自动借款',
+      compare_vs_farm_spot_ipo_opportunity_cost:'对比农场/现货/IPO机会成本',
+      manual_or_ev_gate_only:'仅手动或EV门槛触发',
+      no_signed_broker_yet:'尚未签约券商',
+      no_public_claim_api_observed:'未观测到公开领取接口',
+      response_only_default_high_risk:'默认仅响应，高风险不自动发起',
+      probe_only_never_write:'仅探针，永不写入',
+      negative_or_ineligible:'负EV或不符合条件',
+      default_reject_extreme_deposit_unless_forced:'默认拒绝极端保证金，除非强制',
+      enabled:'已开启开关',
+      no_proven_rtp_edge_in_config:'开关已开，但配置无已证明的RTP优势，暂不自动转',
+      pending:'等待中',
+      skip:'跳过',
+      slot_spin:'老虎机转动',
+      high_risk_default_off:'高风险默认关闭',
+      go_no_paid_high_variance_without_edge:'高波动付费玩法未证明优势，暂不自动执行',
+      paid_high_variance_no_edge:'高波动付费玩法未证明优势，暂不自动执行',
+      go_no_vip_join_without_balance_gate_port:'VIP自动进房未满足余额门控',
+      vip_balance_or_gate_not_met:'VIP余额/门控未满足',
+      vip_enter_ok_but_auto_join_disabled:'VIP可进但自动进房未启用',
+      loan_root_unavailable_use_offers:'借贷根路径不可用，改用借贷挂单',
+      loan_offers_loaded:'借贷挂单已加载',
+      slot_config_loaded:'老虎机配置已加载',
+      vip_state_loaded:'VIP状态已加载',
+      side_lists_loaded:'侧线列表已加载',
+      derivatives_trade_disabled_analyze_only:'期货实盘开关关闭，仅分析',
+      margin_ev_or_shares_insufficient:'保证金EV不足或可开数量为0',
+      go_readonly_no_margin_orders:'期货只读，不下保证金单'
+    };
+    if(map[r]) return map[r];
+
+    let m = r.match(/^free_draws\s*=\s*(.+)$/i);
+    if(m) return '免费抽次数=' + m[1];
+    m = r.match(/^premium_free\s*=\s*(.+)$/i);
+    if(m) return '高级免费次数=' + m[1];
+    m = r.match(/^insufficient_balance\b(.*)$/i);
+    if(m){
+      const tail = String(m[1]||'');
+      const bal = (tail.match(/bal\s*=\s*([0-9.eE+-]+)/i)||[])[1];
+      const minv = (tail.match(/min\s*=\s*([0-9.eE+-]+)/i)||[])[1];
+      if(bal!=null && minv!=null) return '余额不足 当前=' + bal + ' 最低=' + minv;
+      return '余额不足' + (tail ? ' ' + tail.trim() : '');
+    }
+    m = r.match(/^deposit\s*=\s*([0-9.eE+-]+)\s+min_asset\s*=\s*([0-9.eE+-]+)\s+cash\s*=\s*([0-9.eE+-]+)/i);
+    if(m) return '保证金=' + m[1] + ' 最低资产=' + m[2] + ' 现金=' + m[3];
+    m = r.match(/^trade_enabled\s*=\s*(false|true)\s*\((.+)\)$/i);
+    if(m){
+      const flag = m[1].toLowerCase()==='true' ? '开启' : '关闭';
+      let detail = m[2]
+        .replace(/executable plan ready/ig, '可执行计划已就绪')
+        .replace(/set true to pilot live margin/ig, '设为开启后可试运行实盘保证金');
+      return '交易开关=' + flag + '（' + detail + '）';
+    }
+    if(/\/lottery\/api\/leaderboard/i.test(r) || /range\s*只能是/i.test(r)){
+      return '排行榜接口参数无效（range 仅支持 今日/本周/全部）';
+    }
+    m = r.match(/^POST\s+(\/[^\s]+)\s*->\s*(\d+)\s*:\s*(.*)$/i);
+    if(m){
+      const path = m[1], code = m[2], body = m[3] || '';
+      let msg = body;
+      try{
+        const j = JSON.parse(body.replace(/'/g, '"'));
+        if(j && j.message) msg = j.message;
+      }catch(e){
+        const mm = body.match(/'message'\s*:\s*'([^']+)'/);
+        if(mm) msg = mm[1];
+        else {
+          const mm2 = body.match(/"message"\s*:\s*"([^"]+)"/);
+          if(mm2) msg = mm2[1];
+        }
+      }
+      if(/yolo/i.test(path)) return '搏一搏失败 ' + code + '：' + msg;
+      if(/slot/i.test(path)) return '老虎机失败 ' + code + '：' + msg;
+      return '请求失败 ' + path + ' ' + code + (msg?('：'+msg):'');
+    }
+    // Go dump: sell status=403 data=map[_http_status:403 raw:破产冷却中... status_code:403]
+    m = r.match(/status\s*=\s*(\d{3}).*raw[:：]\s*([^\]}]+)/i);
+    if(m){
+      let msg = String(m[2]||'').trim().replace(/\s+status_?code.*$/i,'').replace(/[,\s]+$/,'');
+      return '交易失败 ' + m[1] + '：' + msg;
+    }
+    if(/go\s*no\s*paid|without\s*优势|without\s*edge/i.test(r)){
+      return '高波动付费玩法未启用优势证明，暂不自动执行';
+    }
+    if(/破产冷却/.test(r)){
+      const mm = r.match(/破产冷却[^"'\]}\n]*/);
+      return mm ? mm[0].replace(/[,\s]+$/,''): '破产冷却中，暂时无法交易';
+    }
+    if(r === 'enabled') return '已开启开关';
+    if(r === 'no_proven_rtp_edge_in_config') return '开关已开，但配置无已证明的RTP优势，暂不自动转';
+    if(map[r.toLowerCase()]) return map[r.toLowerCase()];
+    if(/^[a-z][a-z0-9_]*(?:=.*)?$/i.test(r) && r.indexOf(' ') < 0){
+      const eq = r.indexOf('=');
+      if(eq > 0) return humanizeToken(r.slice(0, eq)) + '=' + r.slice(eq+1);
+      return humanizeToken(r);
+    }
+    let out = r;
+    const phrases = [
+      ['executable plan ready', '可执行计划已就绪'],
+      ['set true to pilot live margin', '设为开启后可试运行实盘保证金'],
+      ['enable lottery.auto_deposit only if deposit yield beats alternatives', '仅当理财收益优于其他方案时启用自动存入'],
+      ['trade_enabled=false', '交易开关=关闭'],
+      ['trade_enabled=true', '交易开关=开启'],
+      ['default_reject_extreme_deposit_unless_forced', '默认拒绝极端保证金，除非强制'],
+      ['negative_or_ineligible', '负EV或不符合条件'],
+      ['no_signed_broker_yet', '尚未签约券商'],
+      ['high_variance_default_off', '高波动玩法默认关闭'],
+      ['need_rtp_edge_proof', '默认关：高波动，需RTP优势或手动开关'],
+      ['slot_default_off_need_rtp_or_manual', '默认关：老虎机不自动转，开关在赚钱/控制页'],
+      ['already_checked_or_disabled', '今日已签到'],
+      ['default_no_auto_borrow', '默认不自动借款'],
+      ['compare_vs_farm_spot_ipo_opportunity_cost', '对比农场/现货/IPO机会成本'],
+      ['manual_or_ev_gate_only', '仅手动或EV门槛触发'],
+      ['no_public_claim_api_observed', '未观测到公开领取接口'],
+      ['response_only_default_high_risk', '默认仅响应，高风险不自动发起'],
+      ['probe_only_never_write', '仅探针，永不写入'],
+      ['free_draws', '免费抽次数'],
+      ['premium_free', '高级免费次数'],
+      ['min_asset', '最低资产'],
+      ['deposit', '保证金'],
+      ['cash', '现金'],
+      ['bal', '余额'],
+      ['min', '最低']
+    ];
+    phrases.forEach(([en, zh]) => { out = out.split(en).join(zh); });
+    out = out.replace(/\b([a-z]+(?:_[a-z0-9]+)+)\b/ig, (s) => humanizeToken(s));
+    return out;
+  }
+
+
+  function formatTradeReason(t){
+    t = t || {};
+    const raw = t.reason || '';
+    const rawObj = t.raw || {};
+    let msg = '';
+    if(rawObj && typeof rawObj === 'object'){
+      msg = rawObj.raw || rawObj.message || rawObj.error || '';
+    }
+    if(!msg && typeof raw === 'string'){
+      const m = raw.match(/raw[:：]\s*([^\]}]+)/i);
+      if(m) msg = m[1].replace(/\s+status_?code.*$/i,'').replace(/[,\s]+$/,'');
+    }
+    if(!msg) msg = zhReason(raw);
+    if(/破产冷却/.test(String(msg)) || /破产冷却/.test(String(raw))){
+      const mm = String(msg||raw).match(/破产冷却[^"'\]}\n]*/);
+      msg = mm ? mm[0].replace(/[,\s]+$/,'') : '破产冷却中，暂时无法交易';
+    }
+    const st = Number((rawObj && (rawObj.status_code||rawObj._http_status)) || (String(raw).match(/status\s*=\s*(\d{3})/i)||[])[1] || 0);
+    if(st && msg && !String(msg).includes(String(st))) return '交易失败 ' + st + '：' + msg;
+    return msg || zhReason(raw) || zhStatus(t.status||'') || '-';
+  }
+  function formatSignalReason(r){
+    let s = zhReason(r);
+    if(!s) return '';
+    // cleanup historical corrupted tech reason fragments (???? / EMA?? etc.)
+    s = s
+      .replace(/EMA\?+/g, 'EMA')
+      .replace(/RSI\?+/g, 'RSI')
+      .replace(/MACD\?+/g, 'MACD')
+      .replace(/5m\?+/g, '5m涨跌')
+      .replace(/target_pct\s*=/gi, '目标仓位=')
+      .replace(/budget\s*=/gi, '预算=')
+      .replace(/mode\s*=/gi, '模式=')
+      .replace(/\bEV\s*=/g, '期望收益=')
+      .replace(/net\s*=/gi, '净期望=')
+      .replace(/risk\s*=/gi, '风险=')
+      .replace(/kelly\s*=/gi, 'Kelly=')
+      .replace(/E\[r\]\s*=/g, '期望收益=')
+      .replace(/\|\s*仓位\s*=/g, ' | 仓位=')
+      .replace(/\?\?+/g, '')
+      .replace(/\s*;\s*/g, '；')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return s;
+  }
+  function zhMetric(m){
+    const map = {
+      cash:'现金', stock_value:'持仓市值', equity:'总资产', position_pnl:'持仓浮盈',
+      '现金':'现金', '持仓市值':'持仓市值', '总资产':'总资产', '持仓浮盈':'持仓浮盈', change:'变化'
+    };
+    m = String(m==null?'':m);
+    return map[m] || m || '变化';
+  }
+  function zhKind(k){
+    const map = {
+      expected:'预期收益', balance:'余额', allocated:'已占用', plan:'计划名义',
+      '预期收益':'预期收益', '余额':'余额', '已占用':'已占用', '计划名义':'计划名义'
+    };
+    k = String(k==null?'':k);
+    return map[k] || k || '';
+  }
+  function zhSide(s){
+    const map = { buy:'买入', sell:'卖出', long:'做多', short:'做空', hold:'持有', buy_more:'加仓', reduce:'减仓', close:'平仓' };
+    s = String(s==null?'':s).toLowerCase();
+    return map[s] || s || '-';
+  }
+  function zhTradeAction(s){
+    const map = {
+      buy:'买入', sell:'卖出', hold:'持有', long:'做多', short:'做空',
+      buy_more:'加仓', reduce:'减仓', close:'平仓', open:'开仓', wait:'观望'
+    };
+    s = String(s==null?'':s).toLowerCase();
+    return map[s] || s || '-';
+  }
+  function zhTitle(title, id){
+    const t = String(title==null?'':title).trim();
+    if(!t || t === id || /^[a-z][a-z0-9_]*$/i.test(t)) return moduleDomain(id) || t || id;
+    return t;
+  }
+  function zhCrop(v){
+    if(v==null || v==='') return '-';
+    const raw = String(v);
+    const key = raw.trim().toLowerCase();
+    const map = {
+      lobster:'龙虾藤', berry:'玻璃草莓', carrot:'甜胡萝卜', sprout:'青芽菜', corn:'黄金玉米',
+      auto:'自动优选', best:'最优作物', roi:'按ROI'
+    };
+    if(map[key]) return map[key];
+    // clean mixed strings like "龙虾藤/lobster" or "EV最优 龙虾藤/lobster: ..."
+    let s = raw
+      .replace(/\b龙虾藤\/lobster\b/ig, '龙虾藤')
+      .replace(/\b玻璃草莓\/berry\b/ig, '玻璃草莓')
+      .replace(/\b甜胡萝卜\/carrot\b/ig, '甜胡萝卜')
+      .replace(/\b青芽菜\/sprout\b/ig, '青芽菜')
+      .replace(/\b黄金玉米\/corn\b/ig, '黄金玉米')
+      .replace(/\/lobster\b/ig, '')
+      .replace(/\/berry\b/ig, '')
+      .replace(/\/carrot\b/ig, '')
+      .replace(/\/sprout\b/ig, '')
+      .replace(/\/corn\b/ig, '')
+      .replace(/\blobster\b/ig, '龙虾藤')
+      .replace(/\bberry\b/ig, '玻璃草莓')
+      .replace(/\bcarrot\b/ig, '甜胡萝卜')
+      .replace(/\bsprout\b/ig, '青芽菜')
+      .replace(/\bcorn\b/ig, '黄金玉米');
+    s = s.replace(/\blob\/h\b/ig, '龙虾/时').replace(/\braw\b/ig, '原始');
+    return s;
+  }
+  function zhBool(v){
+    if(v===true || v==='true' || v===1 || v==='1') return '是';
+    if(v===false || v==='false' || v===0 || v==='0') return '否';
+    return v;
+  }
+  function zhPriority(p){
+    p = String(p==null?'':p);
+    if(!p) return '-';
+    return p
+      .replace(/checkin\s*>\s*free_draw\s*>\s*free_premium\s*>\s*analyze_vip_loan_deposit/ig, '签到 > 免费抽 > 高级免费 > 分析VIP/借贷/存入')
+      .replace(/checkin\s*>\s*draw\s*>\s*vip\/?loan/ig, '签到 > 抽奖 > VIP/借贷')
+      .replace(/checkin/ig, '签到')
+      .replace(/free_draw/ig, '免费抽')
+      .replace(/free_premium/ig, '高级免费')
+      .replace(/analyze_vip_loan_deposit/ig, '分析VIP/借贷/存入')
+      .replace(/draw/ig, '抽奖')
+      .replace(/vip/ig, 'VIP')
+      .replace(/loan/ig, '借贷');
+  }
+  function actionLabel(a){
+    a = a || {};
+    const bits = [];
+    const act = zhAction(a.action || '');
+    if(act) bits.push(act);
+    else if(a.status) bits.push(zhStatus(a.status));
+    if(a.code) bits.push(String(a.code));
+    else if(a.name) bits.push(String(a.name));
+    else if(a.crop) bits.push(zhCrop(a.crop));
+    if(a.reason){
+      const rr = zhReason(a.reason);
+      if(rr && !bits.join(' · ').includes(rr)) bits.push(rr);
+    }else if(a.status && act){
+      const st = zhStatus(a.status);
+      if(st && st !== act) bits.push(st);
+    }
+    if(a.ev && typeof a.ev === 'string'){
+      const ee = zhReason(a.ev);
+      if(ee && !bits.join(' · ').includes(ee)) bits.push(ee);
+    }
+    return bits.filter(Boolean).join(' · ') || '动作';
+  }
+  function statusClass(st){
+    st = String(st||'');
+    if(st==='ok') return 'ok';
+    if(st==='error' || st==='forbidden' || st==='unauthorized') return st==='error'?'error':'forbidden';
+    if(st==='analyze_only' || st==='idle' || st==='skip' || st==='probe_only') return 'analyze_only';
+    return '';
+  }
+  function firstAction(mod){
+    const acts = (mod && mod.actions) || [];
+    if(!acts.length) return '-';
+    const a = acts[0] || {};
+    const bits = [actionLabel(a)];
+    if(a.planted!=null || a.harvested!=null || a.stolen!=null){
+      bits.push('种'+a.planted+'/收'+a.harvested+'/偷'+a.stolen);
+      if(a.crop) bits.push(zhCrop(a.crop));
+    }
+    if(a.ipo!=null || a.bets!=null || a.funds!=null){
+      bits.push('IPO'+a.ipo+'/赌'+a.bets+'/基'+a.funds);
+    }
+    return bits.filter(Boolean).join(' · ') || '-';
+  }
+  function shortVal(v, n=42){
+    if(v==null) return '-';
+    if(typeof v === 'number'){
+      if(!Number.isFinite(v)) return '-';
+      if(Math.abs(v) >= 1000) return fmt(v);
+      if(Math.abs(v) < 1) return String(Math.round(v*10000)/10000);
+      return String(Math.round(v*100)/100);
+    }
+    if(typeof v === 'boolean') return v ? '是' : '否';
+    if(Array.isArray(v)){
+      if(!v.length) return '0';
+      if(v.length <= 2 && v.every(x => ['string','number','boolean'].includes(typeof x))) return v.join(',');
+      return String(v.length) + '项';
+    }
+    if(typeof v === 'object'){
+      if(v.count!=null) return shortVal(v.count, n);
+      if(v.size!=null && v.ok!=null) return (v.ok ? '可用' : '不可用') + (v.size!=null ? (' · '+v.size+'条') : '');
+      if(v.ok === true) return '可用';
+      if(v.ok === false){
+        const err = String(v.err||v.error||v.message||'');
+        if(/405/.test(err)) return '接口不支持GET';
+        if(/403/.test(err)) return '无权限';
+        if(/404/.test(err)) return '不存在';
+        if(err) return ('失败 · ' + err.replace(/^GET\s+\S+\s*->\s*/i,'').replace(/^[{\[].*$/, '接口异常')).slice(0,n);
+        return '不可用';
+      }
+      if(v.err || v.error){
+        const err = String(v.err||v.error||'');
+        if(/405/.test(err)) return '接口不支持GET';
+        return ('失败 · ' + err.replace(/^GET\s+\S+\s*->\s*/i,'')).slice(0,n);
+      }
+      if(v.name) return String(v.name).slice(0,n);
+      if(v.code) return String(v.code).slice(0,n);
+      if(v.message) return String(v.message).slice(0,n);
+      if(v.status!=null) return shortVal(v.status, n);
+      return '有数据';
+    }
+    return String(v).slice(0,n);
+  }
+  function actionChipClass(st){
+    st = String(st||'');
+    if(st==='ok') return 'ok';
+    if(st==='error' || st==='forbidden' || st==='unauthorized') return 'bad';
+    if(st==='analyze_only' || st==='idle' || st==='skip' || st==='probe_only') return 'warn';
+    return '';
+  }
+  function moduleDomain(id){
+    const map = {
+      spot: '行情/交易',
+      farm: '农场',
+      lottery: '抽奖/VIP',
+      side_hustle: 'IPO/对赌/基金',
+      brokers: '券商/选举',
+      derivatives: '期货/保证金',
+      calendar: '日历/动态',
+      leaderboard: '排行榜',
+      honors: '荣誉/称号',
+      meeting: '股东大会',
+      governance: '治理',
+      admin: '管理后台'
+    };
+    return map[id] || id;
+  }
+  function moduleKpis(id, m, d){
+    const a = m.analysis || {};
+    const ev = m.ev;
+    const acts = m.actions || [];
+    const out = [];
+    const push = (k,v)=>{ if(v!=null && v!=='' && v!=='-') out.push([k,v]); };
+    if(id==='spot'){
+      push('信号', a.signal_count);
+      push('正EV买', a.positive_buys);
+      if(ev && typeof ev==='object') push('最佳净边', ev.best_net_edge);
+    }else if(id==='farm'){
+      const plots = a.plots || (d.farm||{}).plots || {};
+      push('种植中', plots.growing);
+      push('可收', plots.ready);
+      push('日EV', a.day_ev_12!=null?a.day_ev_12:ev);
+      push('作物', zhCrop(((acts[0]||{}).crop) || (d.farm||{}).crop_key));
+    }else if(id==='lottery'){
+      const me = a.me_after || a.me || {};
+      push('免费抽', me.draws_available);
+      push('高级免费', me.draws_available_premium);
+      const vip = a.vip || {};
+      push('VIP可进', vip.can_enter);
+      push('借贷挂单', (a.loan_offers && a.loan_offers.count!=null)?a.loan_offers.count:(a.loan_offers!=null?a.loan_offers:((a.loan||{}).offers_count)));
+    }else if(id==='side_hustle'){
+      const act = acts[0] || {};
+      push('IPO动作', act.ipo);
+      push('对赌', act.bets);
+      push('基金', act.funds);
+      if(a.ipo_best) push('IPO优选', a.ipo_best.code || a.ipo_best.name || shortVal(a.ipo_best,28));
+    }else if(id==='brokers'){
+      push('券商数', a.brokers_count);
+      push('候选人', a.candidates_count);
+      push('承销单', a.underwriter_count);
+      if(ev && typeof ev==='object') push('注册保证金', ev.registration_deposit);
+    }else if(id==='derivatives'){
+      const best = a.best || ((d.derivatives||{}).actions||[])[0] || acts[0] || {};
+      push('计划', best.code || '-');
+      push('状态', best.status || m.status);
+      push('杠杆', best.leverage);
+      push('名义', best.notional);
+    }else if(id==='calendar'){
+      push('情绪', a.avg_market_mood);
+      if(ev && typeof ev==='object'){ push('进攻偏置', ev.enter_boost); push('风控偏置', ev.risk_off_boost); }
+      else {
+        const b = (d.bias||{}).calendar || {};
+        push('进攻偏置', b.enter_boost); push('风控偏置', b.risk_off_boost);
+      }
+    }else if(id==='leaderboard'){
+      push('估计排名', a.rank_label||a.rank_est);
+      push('我的资产', a.my_equity);
+      if(ev && typeof ev==='object') push('进攻系数', ev.aggression);
+      else push('进攻系数', ((d.bias||{}).leaderboard||{}).aggression);
+      push('榜首', (a.top1 && (a.top1.name||a.top1)) || ((acts[0]||{}).top_name));
+      if(a.count!=null) push('上榜样本', a.count);
+    }else if(id==='honors'){
+      push('近完成', a.near_complete_count!=null?a.near_complete_count:(ev&&ev.near_complete));
+      push('已解锁估', a.unlocked_est);
+      const vip = (a.vip_related||[])[0] || (((acts||[]).find(x=>x.action==='vip_title_track')||{}).items||[])[0];
+      if(vip) push('VIP路径', vip.name || vip.key);
+    }else if(id==='meeting'){
+      push('扫描持仓', a.holdings_scanned);
+      push('活跃大会', (a.active_meetings||[]).length);
+      push('有时间戳', a.with_meeting_ts);
+    }else if(id==='governance'){
+      push('可行动', a.actionable_count!=null?a.actionable_count:(ev&&ev.actionable));
+      const eps = a.endpoints || {};
+      push('端点数', Object.keys(eps).length || null);
+    }else if(id==='admin'){
+      push('授权', a.authorized);
+      const probes = a.probes || acts || [];
+      push('探针', Array.isArray(probes)?probes.length:null);
+      push('策略', '仅探针');
+    }else{
+      if(ev!=null && typeof ev !== 'object') push('EV', ev);
+      if(a && typeof a==='object'){
+        Object.keys(a).slice(0,3).forEach(k=>push(k, shortVal(a[k],24)));
+      }
+    }
+    // pad with generic if sparse
+    if(out.length < 2){
+      push('动作数', acts.length);
+      push('错误数', (m.errors||[]).length);
+    }
+    return out.slice(0,4);
+  }
+  
+  function signedFmt(v){
+    if(v==null || v==='' || Number.isNaN(Number(v))) return '-';
+    const n = Number(v);
+    const s = (n>0?'+':'') + fmt(n);
+    return s;
+  }
+  
+  function earnBadgeClass(st){
+    st = String(st||'');
+    if(st==='ok') return 'ok';
+    if(st==='error' || st==='forbidden' || st==='unauthorized') return 'bad';
+    if(st==='analyze_only' || st==='idle' || st==='skip' || st==='probe_only' || st==='disabled') return 'warn';
+    return '';
+  }
+  function actionChipsHtml(actions, n=5){
+    const arr = Array.isArray(actions) ? actions.slice(0,n) : [];
+    if(!arr.length) return '<span class="earn-chip">暂无动作</span>';
+    return arr.map(a => {
+      const label = actionLabel(a);
+      return '<span class="earn-chip '+earnBadgeClass(a.status)+'">'+escapeHtml(String(label).slice(0,46))+'</span>';
+    }).join('');
+  }
+  function kpiBox(k,v){
+    return '<div class="earn-kpi"><div class="k">'+escapeHtml(String(k))+'</div><div class="v">'+escapeHtml(shortVal(v,40))+'</div></div>';
+  }
+  function flagValue(flags, id, fallback=false){
+    const v = ((flags||{}).values)||{};
+    if(Object.prototype.hasOwnProperty.call(v, id)) return !!v[id];
+    const item = ((flags||{}).items||[]).find(x => x && x.id===id);
+    if(item) return !!item.value;
+    return !!fallback;
+  }
+  function flagSwitchHtml(id, label, on, risk){
+    const st = on ? '开' : '关';
+    const cls = 'flag-sw ' + (on?'on':'off') + (risk==='high'?' risk-high':'');
+    return '<button type="button" class="'+cls+'" data-flag="'+escapeHtml(id)+'" onclick="toggleFeatureFlag(\''+String(id).replace(/'/g,"\\'")+'\', this)">'
+      + '<span class="knob"></span>'
+      + '<span class="flabel">'+escapeHtml(label)+'</span>'
+      + '<span class="fstate">'+st+'</span>'
+      + '</button>';
+  }
+  async function toggleFeatureFlag(id, el){
+    try{
+      if(el) el.classList.add('busy');
+      const curOn = el ? el.classList.contains('on') : false;
+      const next = !curOn;
+      const r = await fetch('/api/feature-flags', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({id, value: next})
+      });
+      const j = await r.json();
+      if(!r.ok || j.ok===false){
+        toast((j && j.error) ? j.error : ('HTTP '+r.status), 'err', '开关失败');
+        return;
+      }
+      // optimistic + refresh
+      if(el){
+        el.classList.toggle('on', next);
+        el.classList.toggle('off', !next);
+        const st = el.querySelector('.fstate');
+        if(st) st.textContent = next ? '开' : '关';
+      }
+      toast((next?'已开启 ':'已关闭 ') + id.replace(/^lottery\./,'').replace(/^derivatives\./,'').replace(/^brokers\./,''), 'ok', '已更新');
+      // soft refresh overview so actions reflect next cycle; keep current tab
+      try{ await refresh(false); }catch(e){}
+    }catch(e){
+      toast(String(e && e.message || e), 'err', '开关失败');
+    }finally{
+      if(el) el.classList.remove('busy');
+    }
+  }
+  function renderFeatureFlagPanel(d){
+    // 开关主位置在赚钱页「农场」卡；控制页不再放整排开关
+    const box = document.getElementById('featureFlagPanel');
+    if(!box) return;
+    const flags = d.feature_flags || {};
+    const items = flags.items || [];
+    if(!items.length){
+      // fallback static from known ids
+      box.innerHTML = [
+        flagSwitchHtml('lottery.auto_checkin','签到', flagValue(flags,'lottery.auto_checkin',true),'low'),
+        flagSwitchHtml('lottery.auto_draw_free','免费抽', flagValue(flags,'lottery.auto_draw_free',true),'low'),
+        flagSwitchHtml('lottery.auto_yolo','搏一搏', flagValue(flags,'lottery.auto_yolo',false),'high'),
+        flagSwitchHtml('lottery.auto_nailong','奶龙机', flagValue(flags,'lottery.auto_nailong',false),'high'),
+        flagSwitchHtml('lottery.auto_slot','老虎机', flagValue(flags,'lottery.auto_slot',false),'high'),
+        flagSwitchHtml('lottery.auto_vip','进VIP', flagValue(flags,'lottery.auto_vip',false),'high'),
+        flagSwitchHtml('derivatives.trade_enabled','期货实盘', flagValue(flags,'derivatives.trade_enabled',false),'high')
+      ].join('');
+      return;
+    }
+    box.innerHTML = items.map(it => flagSwitchHtml(it.id, it.label || it.id, !!it.value, it.risk||'low')).join('');
+  }
+  function zhBrokerMe(me){
+    if(me==null || me==='' || me===false) return '未签约';
+    if(typeof me !== 'object') return String(me);
+    const signed = me.signed_broker || me.broker || me.name || me.id || null;
+    const myCa = me.my_ca || me.ca || me.candidate || null;
+    const parts = [];
+    if(signed && typeof signed === 'object'){
+      parts.push('已签约 ' + (signed.name || signed.id || signed.code || '券商'));
+    }else if(signed){
+      parts.push('已签约 ' + signed);
+    }else if(me.signed === true || me.is_signed === true){
+      parts.push('已签约');
+    }else{
+      parts.push('未签约');
+    }
+    if(myCa && typeof myCa === 'object'){
+      const caName = myCa.name || myCa.id || myCa.code;
+      if(caName) parts.push('候选人 ' + caName);
+    }else if(myCa){
+      parts.push('候选人 ' + myCa);
+    }
+    if(me.likes!=null && me.likes!=='') parts.push('点赞 ' + me.likes);
+    if(me.deposit!=null && me.deposit!=='') parts.push('保证金 ' + shortVal(me.deposit,12));
+    return parts.filter(Boolean).join(' ' + String.fromCharCode(0x00b7) + ' ') || String.fromCharCode(0x6682,0x65e0);
+  }
+
+  function renderEarn(d){
+    const grid = document.getElementById('earnGrid');
+    if(!grid) return;
+    const flags = d.feature_flags || {};
+    const mods = ((d.modules||{}).modules) || {};
+    const lot = mods.lottery || {};
+    const bro = mods.brokers || {};
+    const farmM = mods.farm || {};
+    const derM = mods.derivatives || {};
+    const sideM = mods.side_hustle || {};
+    const farm = d.farm || {};
+    const side = d.side_hustle || {};
+    const der = d.derivatives || {};
+
+    const lotA = lot.analysis || {};
+    const lotMe = lotA.me_after || lotA.me || {};
+    const lotVip = lotA.vip || {};
+    const lotLoan = lotA.loan_offers || {};
+    const broA = bro.analysis || {};
+    const farmA = farmM.analysis || farm.analysis || {};
+    const plots = farmA.plots || farm.plots || {};
+    const derA = derM.analysis || der.analysis || {};
+    const derAct = ((der.actions||derM.actions||[])[0]) || {};
+    const sideA = sideM.analysis || side.analysis || {};
+    const sideAct = ((sideM.actions||[])[0]) || {};
+    const ipoBest = sideA.ipo_best || {};
+    const ipoRows = Array.isArray(side.ipo) ? side.ipo : [];
+    const betRows = Array.isArray(side.bets) ? side.bets : [];
+    const fundRows = Array.isArray(side.funds) ? side.funds : [];
+
+    // 顶部摘要显示赚钱关键指标，而不是重复“xxx 正常”
+    const lotFree = (lotMe.draws_available!=null?lotMe.draws_available:0);
+    const lotPrem = (lotMe.draws_available_premium!=null?lotMe.draws_available_premium:0);
+    const lotBal = lotMe.remaining_lobster;
+    const farmEv = farmA.day_ev_12!=null ? farmA.day_ev_12 : (farm.day_ev_12!=null?farm.day_ev_12:farmM.ev);
+    const derBest0 = ((der.actions||derM.actions||[])[0]) || {};
+    const broN = ((bro.analysis||{}).candidates_count!=null)? (bro.analysis||{}).candidates_count : (((bro.analysis||{}).top||[]).length || ((bro.actions||[]).length));
+    setTextIfChanged('earnHint', (d.modules||{}).ts ? ('更新 ' + ts((d.modules||{}).ts)) : '-');
+
+    const cards = [];
+
+    // lottery
+    cards.push(
+      '<div class="earn-card" data-earn="lottery">'
+      + '<div class="eh"><div class="et">抽奖 / VIP / 借贷</div>'
+      + '<span class="badge '+earnBadgeClass(lot.status)+'">'+escapeHtml(zhStatus(lot.status||'-'))+'</span></div>'
+      + '<div class="earn-kpis">'
+      + kpiBox('免费抽', lotMe.draws_available)
+      + kpiBox('高级免费', lotMe.draws_available_premium)
+      + kpiBox('VIP可进', lotVip.can_enter)
+      + kpiBox('借贷挂单', (lotLoan && lotLoan.count!=null)?lotLoan.count:lotLoan)
+      + '</div>'
+      + '<div class="earn-chips">'+actionChipsHtml(lot.actions,6)+'</div>'
+      + '<div class="flag-row">'
+      + flagSwitchHtml('lottery.auto_checkin','签到', flagValue(flags,'lottery.auto_checkin',true), 'low')
+      + flagSwitchHtml('lottery.auto_draw_free','免费抽', flagValue(flags,'lottery.auto_draw_free',true), 'low')
+      + flagSwitchHtml('lottery.auto_draw_premium_free','高级免费抽', flagValue(flags,'lottery.auto_draw_premium_free',true), 'low')
+      + flagSwitchHtml('lottery.auto_yolo','搏一搏', flagValue(flags,'lottery.auto_yolo',false), 'high')
+      + flagSwitchHtml('lottery.auto_nailong','奶龙机', flagValue(flags,'lottery.auto_nailong',false), 'high')
+      + flagSwitchHtml('lottery.auto_slot','老虎机', flagValue(flags,'lottery.auto_slot',false), 'high')
+      + flagSwitchHtml('lottery.auto_vip','进VIP', flagValue(flags,'lottery.auto_vip',false), 'high')
+      + flagSwitchHtml('lottery.auto_vip_bet','VIP下注', flagValue(flags,'lottery.auto_vip_bet',false), 'high')
+      + flagSwitchHtml('lottery.auto_borrow_zero_rate','借零息', flagValue(flags,'lottery.auto_borrow_zero_rate',false), 'mid')
+      + flagSwitchHtml('lottery.auto_deposit','存款', flagValue(flags,'lottery.auto_deposit',false), 'mid')
+      + flagSwitchHtml('lottery.auto_bankruptcy','破产保护', flagValue(flags,'lottery.auto_bankruptcy',false), 'high')
+      + '</div>'
+      + '<div class="flag-note">可点开关；写入本地数据库，下一轮生效。高波动默认关。</div>'
+      + '<div class="earn-note">余额 ' + escapeHtml(shortVal(lotMe.remaining_lobster,24))
+      + ' · 优先级 ' + escapeHtml(shortVal(zhPriority((lot.ev||{}).priority || 'checkin>draw>vip/loan'), 48))
+      + ' · 今日签到 ' + escapeHtml(shortVal(zhBool(lotMe.checked_today), 8))
+      + '</div></div>'
+    );
+
+    // farm
+    const farmCrop = zhCrop(((farmM.actions||[{}])[0]||{}).crop || farm.crop_key || ((farmA.best||{}).name) || '-');
+    cards.push(
+      '<div class="earn-card" data-earn="farm">'
+      + '<div class="eh"><div class="et">农场</div>'
+      + '<span class="badge '+earnBadgeClass(farmM.status|| (farm.enabled===false?'disabled':'ok'))+'">'+escapeHtml(zhStatus(farmM.status|| (farm.enabled===false?'disabled':'ok')))+'</span></div>'
+      + '<div class="earn-kpis">'
+      + kpiBox('种植中', plots.growing)
+      + kpiBox('可收', plots.ready)
+      + kpiBox('空地', plots.empty)
+      + kpiBox('日EV', farmEv)
+      + '</div>'
+      + '<div class="earn-chips">'+actionChipsHtml(farmM.actions||[{status:'ok',action:'crop',crop:farmCrop}],4)+'</div>'
+      + '<div class="earn-note">作物 ' + escapeHtml(String(zhCrop(farmCrop)))
+      + ' · 偷菜剩余 ' + escapeHtml(shortVal(farm.steal_left,12))
+      + ' · 原因 ' + escapeHtml(shortVal(zhCrop(zhReason(farmA.crop_reason || farm.crop_reason || '')), 40))
+      + '</div></div>'
+    );
+
+    // derivatives
+    const derBest = derA.best || derAct || {};
+    cards.push(
+      '<div class="earn-card" data-earn="derivatives">'
+      + '<div class="eh"><div class="et">期货 / 保证金</div>'
+      + '<span class="badge '+earnBadgeClass(derM.status||derAct.status)+'">'+escapeHtml(zhStatus(derM.status||derAct.status||'-'))+'</span></div>'
+      + '<div class="earn-kpis">'
+      + kpiBox('计划', derBest.code || derAct.code)
+      + kpiBox('状态', zhStatus(derBest.status || derAct.status))
+      + kpiBox('杠杆', derBest.leverage!=null?derBest.leverage:derAct.leverage)
+      + kpiBox('名义', derBest.notional!=null?derBest.notional:derAct.notional)
+      + '</div>'
+      + '<div class="earn-chips">'+actionChipsHtml(der.actions||derM.actions,5)+'</div>'
+      + '<div class="flag-row">'+flagSwitchHtml('derivatives.trade_enabled','期货实盘下单', flagValue(flags,'derivatives.trade_enabled', false), 'high')+'</div>'
+      + '<div class="earn-note">允许交易 ' + escapeHtml(String(zhBool(flagValue(flags,'derivatives.trade_enabled', der.trade_enabled))))
+      + ' · 已开保证金 ' + escapeHtml(shortVal(der.open_margin,16))
+      + ' · 保证金预算 ' + escapeHtml(shortVal(der.margin_budget,16))
+      + ' · 份数 ' + escapeHtml(shortVal(derAct.shares,12))
+      + '</div></div>'
+    );
+
+    // side hustle
+    cards.push(
+      '<div class="earn-card" data-earn="side_hustle">'
+      + '<div class="eh"><div class="et">IPO / 对赌 / 基金</div>'
+      + '<span class="badge '+earnBadgeClass(sideM.status)+'">'+escapeHtml(zhStatus(sideM.status||'-'))+'</span></div>'
+      + '<div class="earn-kpis">'
+      + kpiBox('IPO动作', sideAct.ipo!=null?sideAct.ipo:ipoRows.length)
+      + kpiBox('对赌', sideAct.bets!=null?sideAct.bets:betRows.length)
+      + kpiBox('基金', sideAct.funds!=null?sideAct.funds:fundRows.length)
+      + kpiBox('IPO优选', ipoBest.code || ipoBest.name || ((ipoRows[0]||{}).code))
+      + '</div>'
+      + '<div class="earn-list">'
+      + (ipoRows.slice(0,3).map(r => {
+          const a = r.analysis || r;
+          return '<div class="earn-row"><div>'+escapeHtml(String(r.name||r.code||'IPO'))+'</div><div>'+escapeHtml(shortVal(r.amount!=null?r.amount:a.amount,16))+'</div><div>'+escapeHtml(zhStatus(r.status||a.status||'-'))+'</div></div>';
+        }).join('') || '<div class="note">暂无 IPO 行</div>')
+      + '</div>'
+      + '<div class="earn-note">现金 ' + escapeHtml(shortVal(side.cash,18))
+      + ' · 跳过 ' + escapeHtml(shortVal(((side.skipped_reasons||[]).slice(0,2).map(zhReason).filter(Boolean).join('；')) || '-', 40))
+      + '</div></div>'
+    );
+
+    // brokers wide
+    const topBrokers = Array.isArray(broA.top_brokers) ? broA.top_brokers : [];
+    cards.push(
+      '<div class="earn-card wide" data-earn="brokers">'
+      + '<div class="eh"><div class="et">券商 / 选举 / 承销</div>'
+      + '<span class="badge '+earnBadgeClass(bro.status)+'">'+escapeHtml(zhStatus(bro.status||'-'))+'</span></div>'
+      + '<div class="earn-kpis">'
+      + kpiBox('券商数', broA.brokers_count)
+      + kpiBox('候选人', broA.candidates_count)
+      + kpiBox('承销单', broA.underwriter_count)
+      + kpiBox('注册保证金', (bro.ev||{}).registration_deposit)
+      + '</div>'
+      + '<div class="earn-chips">'+actionChipsHtml(bro.actions,6)+'</div>'
+      + '<div class="earn-list">'
+      + (topBrokers.slice(0,4).map(b => {
+          return '<div class="earn-row"><div>'+escapeHtml(String(b.name||b.id||'券商'))+'</div><div>点赞 ' + escapeHtml(shortVal(b.likes!=null?b.likes:b.like_count,12)) + '</div><div>'+escapeHtml(shortVal(b.deposit!=null?b.deposit:b.score,16))+'</div></div>';
+        }).join('') || '<div class="note">暂无热门券商列表</div>')
+      + '</div>'
+      + '<div class="flag-row">'
+      + flagSwitchHtml('brokers.auto_like','自动点赞', flagValue(flags,'brokers.auto_like',true), 'low')
+      + flagSwitchHtml('brokers.auto_underwrite','自动承销', flagValue(flags,'brokers.auto_underwrite',false), 'high')
+      + '</div>'
+      + '<div class="earn-note">承销开放 ' + escapeHtml(shortVal(zhBool((bro.ev||{}).underwriter_open),12))
+      + ' · 我 ' + escapeHtml(shortVal(zhBrokerMe(broA.me || bro.me || (bro.ev||{}).me), 48))
+      + '</div></div>'
+    );
+
+    // 内容不变时不重绘整卡，避免自动刷新/切卡闪烁
+    setHtmlIfChanged(grid, cards.join(''));
+    setTextIfChanged('earnNote', '赚钱域 5 卡已渲染 · 抽奖免费 ' + shortVal(lotMe.draws_available,8)
+      + '/' + shortVal(lotMe.draws_available_premium,8)
+      + ' · 农场日EV ' + shortVal(farmEv,16)
+      + ' · 期货 ' + shortVal(derAct.code||'-',18));
+  }
+
+
+  function infoKpiBox(k,v){
+    return '<div class="info-kpi"><div class="k">'+escapeHtml(String(k))+'</div><div class="v">'+escapeHtml(shortVal(v,40))+'</div></div>';
+  }
+  function renderInfo(d){
+    const grid = document.getElementById('infoGrid');
+    if(!grid) return;
+    const mods = ((d.modules||{}).modules) || {};
+    const cal = mods.calendar || {};
+    const lb = mods.leaderboard || {};
+    const hon = mods.honors || {};
+    const meet = mods.meeting || {};
+    const gov = mods.governance || {};
+    const adm = mods.admin || {};
+    const calA = cal.analysis || {};
+    const lbA = lb.analysis || {};
+    const honA = hon.analysis || {};
+    const meetA = meet.analysis || {};
+    const govA = gov.analysis || {};
+    const admA = adm.analysis || {};
+    const biasCal = ((d.bias||{}).calendar) || {};
+    const biasLb = ((d.bias||{}).leaderboard) || {};
+
+    const meetN = Array.isArray(meetA.active_meetings) ? meetA.active_meetings.length : (meetA.holdings_scanned!=null?meetA.holdings_scanned:'-');
+    setTextIfChanged('infoHint', (d.modules||{}).ts ? ('更新 ' + ts((d.modules||{}).ts)) : '-');
+
+    const cards = [];
+    const calSource = String(calA.source || 'events+news').replace(/events\+news/ig, '事件+新闻').replace(/events/ig, '事件').replace(/news/ig, '新闻');
+    const calMood = calA.avg_market_mood!=null?calA.avg_market_mood:(calA.avg_news_sentiment!=null?calA.avg_news_sentiment:((cal.actions||[{}])[0]||{}).avg_mood);
+    const calEnter = (cal.ev&&cal.ev.enter_boost!=null)?cal.ev.enter_boost:(biasCal.enter_boost!=null?biasCal.enter_boost:0);
+    const calRisk = (cal.ev&&cal.ev.risk_off_boost!=null)?cal.ev.risk_off_boost:(biasCal.risk_off_boost!=null?biasCal.risk_off_boost:0);
+    cards.push(
+      '<div class="info-card" data-info="calendar">'
+      + '<div class="eh"><div class="et">日历 / 市场情绪</div>'
+      + '<span class="badge '+earnBadgeClass(cal.status)+'">'+escapeHtml(zhStatus(cal.status||'analyze_only'))+'</span></div>'
+      + '<div class="info-kpis">'
+      + infoKpiBox('市场情绪', calMood!=null?calMood:'暂无评分')
+      + infoKpiBox('进攻偏置', calEnter)
+      + infoKpiBox('风控偏置', calRisk)
+      + infoKpiBox('数据源', calSource)
+      + '</div>'
+      + '<div class="info-chips">'+actionChipsHtml(cal.actions,5).replaceAll('earn-chip','info-chip')+'</div>'
+      + '<div class="info-note">无专用日历接口时改用事件/新闻做偏置分析，只影响调仓节奏与风险开关，不直接下单</div></div>'
+    );
+
+    const boards = lbA.boards || {};
+    const assetB = boards.asset || {};
+    const farmB = boards.farm || {};
+    const lotToday = (boards.lottery_today && boards.lottery_today.data) || {};
+    const lotWeek = (boards.lottery_week && boards.lottery_week.data) || {};
+    const lotAll = (boards.lottery_all && boards.lottery_all.data) || {};
+    const vipB = boards.vip || {};
+    const top1Obj = (assetB.top1 && typeof assetB.top1==='object') ? assetB.top1 : ((lbA.top1 && typeof lbA.top1==='object') ? lbA.top1 : {});
+    const top1 = top1Obj.name || ((lb.actions||[{}])[0]||{}).top_name || '暂无';
+    const lbRank = assetB.rank_label!=null?assetB.rank_label:(lbA.rank_label!=null?lbA.rank_label:(lbA.rank_est!=null?lbA.rank_est:'100+'));
+    const lbEquity = assetB.my_equity!=null?assetB.my_equity:(lbA.my_equity!=null?lbA.my_equity:null);
+    const lbAgg = (lb.ev&&lb.ev.aggression!=null)?lb.ev.aggression:(biasLb.aggression!=null?biasLb.aggression:((lbA.bias||{}).aggression));
+    const lbNotes = (((lbA.bias||{}).notes)||biasLb.notes||[]).map(x => zhReason(x)).filter(Boolean);
+    const lbTop = Array.isArray(assetB.top) ? assetB.top : (Array.isArray(lbA.top) ? lbA.top : []);
+    const farmMe = farmB.me || lbA.farm_me || {};
+    const farmTop = Array.isArray(farmB.top) ? farmB.top : [];
+    const farmLob = farmMe.total_lobster!=null?farmMe.total_lobster:farmMe.harvested_lobster;
+    const rowHtml = (left, mid, right) => '<div class="info-row"><div>'+escapeHtml(String(left))+'</div><div>'+escapeHtml(String(mid))+'</div><div>'+escapeHtml(String(right))+'</div></div>';
+    const lotBlock = (title, pack) => {
+      pack = pack || {};
+      const luckyTop = Array.isArray(pack.lucky_top)?pack.lucky_top:[];
+      const unluckyTop = Array.isArray(pack.unlucky_top)?pack.unlucky_top:[];
+      let html = '<div class="info-note" style="margin-top:8px;border-top:1px solid rgba(210,230,255,.10);padding-top:8px">'+escapeHtml(title)+' · 欧皇'+escapeHtml(shortVal(pack.lucky_count,8))+' / 非酋'+escapeHtml(shortVal(pack.unlucky_count,8))+'</div>';
+      html += '<div class="info-list">';
+      // lottery_lobster 是抽奖盈亏，不是农场龙虾产量
+      html += luckyTop.slice(0,3).map(x => rowHtml('欧皇#'+(x.rank||'-')+' '+(x.name||'-'), '盈亏', shortVal(x.lottery_lobster,14))).join('');
+      html += unluckyTop.slice(0,3).map(x => rowHtml('非酋#'+(x.rank||'-')+' '+(x.name||'-'), '盈亏', shortVal(x.lottery_lobster,14))).join('');
+      if(!luckyTop.length && !unluckyTop.length){
+        html += '<div class="note">暂无抽奖榜数据</div>';
+      }
+      html += '</div>';
+      return html;
+    };
+    cards.push(
+      '<div class="info-card wide" data-info="leaderboard">'
+      + '<div class="eh"><div class="et">排行榜（分榜）</div>'
+      + '<span class="badge '+earnBadgeClass(lb.status)+'">'+escapeHtml(zhStatus(lb.status||'ok'))+'</span></div>'
+      + '<div class="info-kpis">'
+      + infoKpiBox('资产排名', lbRank!=null?lbRank:'100+')
+      + infoKpiBox('我的资产', lbEquity!=null?lbEquity:'暂无')
+      + infoKpiBox('进攻系数', lbAgg!=null?lbAgg:0)
+      + infoKpiBox('资产榜首', top1)
+      + '</div>'
+      + '<div class="info-note">资产榜 · 样本 '+escapeHtml(shortVal(assetB.count!=null?assetB.count:lbA.count,8))+' · 中位 '+escapeHtml(shortVal(assetB.median_top!=null?assetB.median_top:lbA.median_top,14))+(lbNotes.length?(' · '+escapeHtml(lbNotes.join('；'))):'')+'</div>'
+      + '<div class="info-list">'
+      + (lbTop.slice(0,5).map(x => {
+          const nm = x.name || x.display_name || '-';
+          const asset = x.total_asset!=null?x.total_asset:x.balance;
+          return rowHtml('#'+(x.rank||'-')+' '+nm, '总资产', shortVal(asset,14));
+        }).join('') || '<div class="note">暂无资产榜前排</div>')
+      + '</div>'
+      + '<div class="info-note" style="margin-top:8px;border-top:1px solid rgba(210,230,255,.10);padding-top:8px">农场榜 · 接口返回 '+(farmB.count!=null?farmB.count:(lbA.farm_rank_count!=null?lbA.farm_rank_count:0))+' 条'
+      + ((((farmB.count!=null?farmB.count:(lbA.farm_rank_count!=null?lbA.farm_rank_count:farmTop.length))||0)<=1) ? ' · 非完整全服榜' : '')
+      + '</div>'
+      + '<div class="info-list">'
+      + (farmTop.slice(0,5).map(x => rowHtml(((((farmB.count!=null?farmB.count:farmTop.length)||0)>1)?('#'+(x.rank||'-')+' '):'我 · ')+(x.name||'-'), '产量', shortVal(x.total_lobster!=null?x.total_lobster:x.harvested_lobster,14))).join('')
+        || (farmLob!=null ? rowHtml('我 · '+(farmMe.name||lbA.my_name||'我'), '产量', shortVal(farmLob,14)) : '<div class="note">暂无农场榜</div>'))
+      + ((((farmB.count!=null?farmB.count:farmTop.length)||0)<=1)
+          ? '<div class="note">说明：/farm/rankings 当前只返回你自己的产量，不是全服排行；显示“我”不代表全服第一。</div>'
+          : '')
+      + '</div>'
+      + lotBlock('抽奖榜·今日', lotToday)
+      + lotBlock('抽奖榜·本周', lotWeek)
+      + lotBlock('抽奖榜·全部', lotAll)
+      + '<div class="info-note" style="margin-top:8px;border-top:1px solid rgba(210,230,255,.10);padding-top:8px">VIP榜 · '+escapeHtml(shortVal(vipB.count,8))+(vipB.period?(' · '+escapeHtml(String(vipB.period))):'')+'</div>'
+      + '<div class="info-list">'
+      + ((Array.isArray(vipB.top)?vipB.top:[]).slice(0,5).map(x => rowHtml('#'+(x.rank||'-')+' '+(x.name||'-'), '积分', shortVal(x.score,14))).join('') || '<div class="note">暂无 VIP 榜数据</div>')
+      + '</div>'
+      + '<div class="info-chips">'+actionChipsHtml(lb.actions,6).replaceAll('earn-chip','info-chip')+'</div>'
+      + '<div class="info-note">分榜单位：资产榜=总资产；农场榜=产量；抽奖榜=抽奖盈亏；VIP榜=积分</div></div>'
+    );
+
+    const vip = (honA.vip_related||[])[0] || ((((hon.actions||[]).find(x=>x.action==='vip_title_track')||{}).items)||[])[0] || {};
+    const counts = ((hon.actions||[{}])[0]||{}).counts || {};
+    cards.push(
+      '<div class="info-card" data-info="honors">'
+      + '<div class="eh"><div class="et">荣誉 / 称号</div>'
+      + '<span class="badge '+earnBadgeClass(hon.status)+'">'+escapeHtml(zhStatus(hon.status||'-'))+'</span></div>'
+      + '<div class="info-kpis">'
+      + infoKpiBox('近完成', honA.near_complete_count!=null?honA.near_complete_count:(hon.ev&&hon.ev.near_complete))
+      + infoKpiBox('已解锁估', honA.unlocked_est)
+      + infoKpiBox('成就/徽章', (counts.achievements!=null||counts.badges!=null)?((counts.achievements||0)+'/'+(counts.badges||0)):'-')
+      + infoKpiBox('VIP路径', vip.name || vip.key || '-')
+      + '</div>'
+      + '<div class="info-chips">'+actionChipsHtml(hon.actions,5).replaceAll('earn-chip','info-chip')+'</div>'
+      + '<div class="info-note">称号 ' + escapeHtml(shortVal(counts.titles,8)) + ' · 近完成任务用于 VIP 路径跟踪</div></div>'
+    );
+
+    const activeMeet = Array.isArray(meetA.active_meetings) ? meetA.active_meetings : [];
+    cards.push(
+      '<div class="info-card" data-info="meeting">'
+      + '<div class="eh"><div class="et">股东大会</div>'
+      + '<span class="badge '+earnBadgeClass(meet.status)+'">'+escapeHtml(zhStatus(meet.status||'-'))+'</span></div>'
+      + '<div class="info-kpis">'
+      + infoKpiBox('扫描持仓', meetA.holdings_scanned!=null?meetA.holdings_scanned:((meet.actions||[{}])[0]||{}).scanned)
+      + infoKpiBox('活跃大会', activeMeet.length)
+      + infoKpiBox('有时间戳', meetA.with_meeting_ts!=null?meetA.with_meeting_ts:((meet.actions||[{}])[0]||{}).with_last_meeting_ts)
+      + infoKpiBox('动作数', (meet.actions||[]).length)
+      + '</div>'
+      + '<div class="info-list">'
+      + (activeMeet.slice(0,4).map(x => {
+          return '<div class="info-row"><div>'+escapeHtml(String(x.name||x.code||x.title||'大会'))+'</div><div>'+escapeHtml(shortVal(x.status||x.state,12))+'</div><div>'+escapeHtml(shortVal(x.ts||x.time||'-',16))+'</div></div>';
+        }).join('') || '<div class="note">当前持仓无活跃股东大会</div>')
+      + '</div>'
+      + '<div class="info-note">公开列表接口不可用时，仅扫描持仓相关大会，避免无关噪音</div></div>'
+    );
+
+    const eps = govA.endpoints || {};
+    const epKeys = Object.keys(eps);
+    const govPathName = (path) => {
+      const s = String(path||'');
+      if(s.includes('my-initiated')) return '我发起的';
+      if(s.includes('buyback')) return '回购';
+      if(s.includes('dividend')) return '分红';
+      if(s.includes('esop')) return '员工持股';
+      if(s.includes('lawsuit')) return '诉讼';
+      if(s.includes('privatize')) return '私有化';
+      if(s.includes('tender')) return '要约收购';
+      return s.replace(/^\/governance\//,'').replace(/\//g,' ') || '路径';
+    };
+    const govEpRows = epKeys.map(k => {
+      const v = eps[k] || {};
+      const ok = v.ok === true;
+      const statusTxt = ok ? '可用' : (/405/.test(String(v.err||'')) ? '不支持GET' : '不可用');
+      const detail = ok ? ((v.size!=null?(v.size+'条'):(v.type==='list'?'列表':'正常'))) : shortVal(v, 18);
+      return {name: govPathName(k), statusTxt, detail, ok};
+    });
+    const govOkN = govEpRows.filter(x => x.ok).length;
+    cards.push(
+      '<div class="info-card" data-info="governance">'
+      + '<div class="eh"><div class="et">治理</div>'
+      + '<span class="badge '+earnBadgeClass(gov.status)+'">'+escapeHtml(zhStatus(gov.status||'-'))+'</span></div>'
+      + '<div class="info-kpis">'
+      + infoKpiBox('可行动', govA.actionable_count!=null?govA.actionable_count:(gov.ev&&gov.ev.actionable!=null?gov.ev.actionable:0))
+      + infoKpiBox('可用接口', govOkN + '/' + (epKeys.length||0))
+      + infoKpiBox('动作数', (gov.actions||[]).length)
+      + infoKpiBox('策略', '只观察')
+      + '</div>'
+      + '<div class="info-list">'
+      + (govEpRows.slice(0,6).map(x => {
+          return '<div class="info-row"><div>'+escapeHtml(x.name)+'</div><div>'+escapeHtml(x.statusTxt)+'</div><div>'+escapeHtml(String(x.detail))+'</div></div>';
+        }).join('') || '<div class="note">暂无治理端点摘要</div>')
+      + '</div>'
+      + '<div class="info-chips">'+actionChipsHtml(gov.actions,5).replaceAll('earn-chip','info-chip')+'</div>'
+      + '<div class="info-note">治理域默认只观察可行动项，不自动投票；部分接口仅支持非GET方法</div></div>'
+    );
+
+    const probes = admA.probes || adm.actions || [];
+    cards.push(
+      '<div class="info-card wide" data-info="admin">'
+      + '<div class="eh"><div class="et">管理后台（探针）</div>'
+      + '<span class="badge '+earnBadgeClass(adm.status)+'">'+escapeHtml(zhStatus(adm.status||'-'))+'</span></div>'
+      + '<div class="info-kpis">'
+      + infoKpiBox('授权', zhBool(admA.authorized))
+      + infoKpiBox('探针数', Array.isArray(probes)?probes.length:Object.keys(admA.probes||{}).length || null)
+      + infoKpiBox('策略', '仅探针')
+      + infoKpiBox('结果', zhStatus(adm.status||'forbidden'))
+      + '</div>'
+      + '<div class="info-chips">'+actionChipsHtml(adm.actions || probes,6).replaceAll('earn-chip','info-chip')+'</div>'
+      + '<div class="info-note">后台默认仅探针；无权限时只展示探测结果，不改生产配置</div></div>'
+    );
+
+    setHtmlIfChanged(grid, cards.join(''));
+    setTextIfChanged('infoNote', '信息/治理 6 卡已渲染 · 排行 ' + shortVal(lbA.rank_est!=null?lbA.rank_est:((lb.actions||[{}])[0]||{}).rank_est,8)
+      + ' · 大会 ' + shortVal(activeMeet.length,8)
+      + ' · 后台 ' + zhStatus(adm.status||'-'));
+  }
+
+  function renderFunds(d){
+    const f = d.funds || {};
+    const tot = f.totals || {};
+    const delta = f.delta_vs_prev || {};
+    const idn = f.identity || tot.identity || {};
+    setTextIfChanged('fEquity', fmt(tot.equity));
+    setTextIfChanged('fCash', fmt(tot.cash));
+    setTextIfChanged('fStock', fmt(tot.stock_value));
+    setTextIfChanged('fGap', fmt(idn.gap));
+    setTextIfChanged('fFormula', idn.formula || '总资产 ≈ 现金 + 持仓市值');
+    setTextIfChanged('fEquityDelta', '变动 ' + signedFmt(delta.equity));
+    setTextIfChanged('fCashDelta', '变动 ' + signedFmt(delta.cash));
+    setTextIfChanged('fStockDelta', '变动 ' + signedFmt(delta.stock_value));
+    setTextIfChanged('fundsHint', f.ts ? ts(f.ts) : '-');
+
+    const bars = document.getElementById('fundsBars');
+    if(bars){
+      let comp = f.composition || [];
+      const eq = Number(tot.equity||0) || 1;
+      if(!Array.isArray(comp)){
+        const o = comp || {};
+        comp = [
+          {key:'cash', name:'现金', amount:Number(o.cash||tot.cash||0), pct:(Number(o.cash||tot.cash||0)/eq)},
+          {key:'stock', name:'持仓市值', amount:Number(o.stock_value||tot.stock_value||0), pct:(Number(o.stock_value||tot.stock_value||0)/eq)}
+        ];
+      }
+      bars.innerHTML = comp.map(c => {
+        let pct = Number(c.pct||0);
+        if(pct <= 1) pct = pct*100;
+        pct = Math.max(0, Math.min(100, pct));
+        return '<div class="funds-bar-row"><div class="n">'+escapeHtml(String(c.name||c.key||'-'))+'</div>'
+          + '<div class="funds-bar"><i style="width:'+pct.toFixed(1)+'%"></i></div>'
+          + '<div class="a">'+escapeHtml(fmt(c.amount))+' · '+pct.toFixed(1)+'%</div></div>';
+      }).join('') || '<div class="note">暂无构成</div>';
+    }
+
+    const ch = document.getElementById('fundsChanges');
+    if(ch){
+      const rows = Array.isArray(f.changes)?f.changes:[];
+      ch.innerHTML = rows.map(r => {
+        const dv = (r.delta!=null?r.delta:r.value);
+        const cls = Number(dv)>0?'good':(Number(dv)<0?'bad':'');
+        return '<div class="src-item"><div class="t"><span>'+escapeHtml(zhMetric(r.metric||'change'))+'</span>'
+          + '<span class="'+cls+'">'+escapeHtml(signedFmt(dv))+'</span></div>'
+          + '<div class="d">'+escapeHtml(String(r.explain||''))+'</div></div>';
+      }).join('') || '<div class="note">暂无变化解释（需至少两个 loop 快照）</div>';
+    }
+
+    const posBox = document.getElementById('fundsPos');
+    if(posBox){
+      const rows = Array.isArray(f.position_contributors)?f.position_contributors:[];
+      setTextIfChanged('fundsPosHint', '合计浮盈 ' + fmt(tot.positions_pnl_sum));
+      posBox.innerHTML = rows.map(r => {
+        const cls = Number(r.pnl)>0?'good':(Number(r.pnl)<0?'bad':'');
+        return '<div class="row"><div>'+escapeHtml(String(r.name||r.code||'-'))+' <span style="color:var(--muted)">'+escapeHtml(String(r.code||''))+'</span></div>'
+          + '<div class="'+cls+'">'+escapeHtml(signedFmt(r.pnl))+'</div>'
+          + '<div style="text-align:right">'+escapeHtml(fmt(r.market_value))+'</div></div>';
+      }).join('') || '<div class="note">暂无持仓贡献</div>';
+    }
+
+    const modBox = document.getElementById('fundsModules');
+    if(modBox){
+      const rows = Array.isArray(f.module_impacts)?f.module_impacts:[];
+      modBox.innerHTML = rows.map(r => {
+        let detail = String(r.detail||'');
+        detail = zhCrop(detail)
+          .replace(/作物=lobster/ig, '作物=龙虾藤')
+          .replace(/地块=map\[empty:(\d+)\s+growing:(\d+)\s+ready:(\d+)\]/ig, '地块=空$1/种$2/可收$3')
+          .replace(/地块=map\[empty:(\d+) growing:(\d+) ready:(\d+)\]/ig, '地块=空$1/种$2/可收$3')
+          .replace(/tokens=/ig, 'token=')
+          .replace(/calls=/ig, '调用=');
+        return '<div class="src-item"><div class="t"><span>'+escapeHtml(String(r.title||moduleDomain(r.module)||r.module||'-'))+' · '+escapeHtml(zhKind(r.kind||''))+'</span>'
+          + '<span>'+escapeHtml(r.amount==null?'-':fmt(r.amount))+'</span></div>'
+          + '<div class="d">'+escapeHtml(detail)+'</div></div>';
+      }).join('') || '<div class="note">暂无模块资金影响</div>';
+    }
+
+    const evBox = document.getElementById('fundsEvents');
+    if(evBox){
+      const flow = f.trade_cashflow || {};
+      setTextIfChanged('fundsTradeHint', '买 '+fmt(flow.buy_notional)+' / 卖 '+fmt(flow.sell_notional)+' / 净 '+signedFmt(flow.net));
+      const rows = Array.isArray(f.recent_events)?f.recent_events:[];
+      evBox.innerHTML = rows.map(r => {
+        const cls = r.side==='sell'?'good':(r.side==='buy'?'bad':'');
+        const why = (typeof formatTradeReason==='function') ? formatTradeReason(r) : zhReason(r.reason||'');
+        return '<div class="src-item"><div class="t"><span>'+escapeHtml(zhSide(r.side||'-'))+' '+escapeHtml(String(r.code||'-'))+' · '+escapeHtml(zhStatus(r.status||''))+'</span>'
+          + '<span class="'+cls+'">'+escapeHtml(fmt(r.notional))+'</span></div>'
+          + '<div class="d">'+escapeHtml(String(r.shares||0)+' 股 · 价 '+String(r.price||0)+' · '+why)+'</div></div>';
+      }).join('') || '<div class="note">暂无成交事件</div>';
+    }
+
+    const note = '构成差额 ' + fmt(idn.gap) + ' · 近成交净现金流 ' + signedFmt((f.trade_cashflow||{}).net);
+    
+    // LLM API usage card content (reuse modules box header via note/detail rows)
+    try{
+      const llm = (f.llm_usage || d.llm_usage || {});
+      const llmLine = 'LLM累计 ' + fmt(llm.total_cost) + ' / 本期 ' + fmt(llm.period_cost)
+        + ' ' + String.fromCharCode(0x00b7) + ' token ' + shortVal(llm.total_tokens,12)
+        + ' ' + String.fromCharCode(0x00b7) + ' 调用 ' + shortVal(llm.call_count,8);
+      // append as a synthetic module row if empty amount still shows
+      if(modBox && !(f.module_impacts||[]).some(x => x && x.module==='llm')){
+        modBox.innerHTML = (modBox.innerHTML || '')
+          + '<div class="src-item"><div class="t"><span>LLM API 消耗 · 费用</span><span>'
+          + escapeHtml(llm.total_cost==null?'-':fmt(llm.total_cost))
+          + '</span></div><div class="d">' + escapeHtml(llmLine + ' · ' + (llm.endpoint||'')) + '</div></div>';
+      }
+      setTextIfChanged('fundsHint', (f.ts ? ts(f.ts) : '-') + ' ' + String.fromCharCode(0x00b7) + ' ' + llmLine);
+    }catch(e){}
+
+    setTextIfChanged('fundsNote', note);
+  }
+
+  function renderModules(d){
+    const box = document.getElementById('modGrid');
+    if(!box) return;
+    const bundle = d.modules || {};
+    const mods = bundle.modules || {};
+    const order = bundle.order || Object.keys(mods);
+    const counts = bundle.counts || {};
+    setTextIfChanged('modTotal', '模块 ' + (counts.total!=null?counts.total:order.length));
+    setTextIfChanged('modOk', '正常 ' + (counts.ok!=null?counts.ok:'-'));
+    setTextIfChanged('modErr', '错误 ' + (counts.error!=null?counts.error:'-'));
+    const bcal = (d.bias||{}).calendar || {};
+    const blb = (d.bias||{}).leaderboard || {};
+    const biasTxt = '日历偏置 ' + (bcal.enter_boost!=null?bcal.enter_boost:0) + ' / 榜单进攻 ' + (blb.aggression!=null?blb.aggression:0);
+    setTextIfChanged('modBias', biasTxt);
+    setTextIfChanged('modHint', bundle.ts ? ts(bundle.ts) : '-');
+    if(!order.length){
+      box.innerHTML = '<div class="note">暂无模块状态（等 bot 跑一轮总线）</div>';
+      setTextIfChanged('modNote', '等待 modules 状态写入');
+      return;
+    }
+    const html = order.map(id => {
+      const m = mods[id] || {};
+      const st = m.status || '-';
+      const title = zhTitle(m.title, id);
+      const domain = moduleDomain(id);
+      const errN = (m.errors||[]).length;
+      const actN = (m.actions||[]).length;
+      const kpis = moduleKpis(id, m, d);
+      const kpiHtml = kpis.map(([k,v]) => (
+        '<div class="kpi-i"><div class="k">'+escapeHtml(String(k))+'</div><div class="v">'+escapeHtml(shortVal(v,36))+'</div></div>'
+      )).join('');
+      const chips = (m.actions||[]).slice(0,4).map(a => {
+        const label = actionLabel(a);
+        return '<span class="chip '+actionChipClass(a.status)+'">'+escapeHtml(String(label).slice(0,42))+'</span>';
+      }).join('');
+      return '<div class="mod-card" data-module="'+escapeHtml(String(id))+'">'
+        + '<div class="mh"><div class="mt">'+escapeHtml(String(zhTitle(title,id)))+'</div>'
+        + '<span class="st '+statusClass(st)+'">'+escapeHtml(zhStatus(st))+'</span></div>'
+        + '<div class="domain">'+escapeHtml(domain)+' · 动作 '+actN+' · 错误 '+errN+'</div>'
+        + '<div class="kpis">'+kpiHtml+'</div>'
+        + (chips ? ('<div class="acts">'+chips+'</div>') : '')
+        + '<div class="act">'+escapeHtml(firstAction(m))+'</div>'
+        + '</div>';
+    }).join('');
+    setHtmlIfChanged(box, html);
+    // lottery / derivatives quick note
+    const lot = mods.lottery || {};
+    const der = d.derivatives || {};
+    const lotAfter = ((lot.analysis||{}).me_after)||((lot.analysis||{}).me)||{};
+    const derAct = ((der.actions||[])[0]||{});
+    let note = '功能区前端 ' + order.length + ' 项已映射';
+    if(lotAfter.draws_available!=null) note += ' · 抽奖剩余 ' + lotAfter.draws_available + '/' + (lotAfter.draws_available_premium||0);
+    if(derAct.code) note += ' · 期货计划 ' + derAct.code + ' ' + (derAct.status||'');
+    setTextIfChanged('modNote', note);
+  }
+
+  // global scroll gate: wheel/scroll must freeze card transforms or the page flickers
+  let __tiltScrollTimer = 0;
+  let __tiltScrollLocked = false;
+  let __lastScrollY = window.scrollY || 0;
+  function clearAllTilts(){
+    document.querySelectorAll('.mod-card, .earn-card, .info-card, .kpi, .pos-card, .risk-item, .mode-hero, .alloc, .funds-kpi').forEach(el => {
+      el.classList.remove('tilt-on', 'tilt-leave');
+      el.style.transform = '';
+      el.style.transition = '';
+    });
+  }
+  function setTiltScrollLock(on){
+    const next = !!on;
+    if(next === __tiltScrollLocked) {
+      if(next) clearAllTilts();
+      return;
+    }
+    __tiltScrollLocked = next;
+    document.documentElement.classList.toggle('is-scrolling', __tiltScrollLocked);
+    if(__tiltScrollLocked) clearAllTilts();
+  }
+  function onPageScrollActivity(){
+    setTiltScrollLock(true);
+    if(__tiltScrollTimer) clearTimeout(__tiltScrollTimer);
+    __tiltScrollTimer = setTimeout(() => setTiltScrollLock(false), 180);
+  }
+  if(!window.__tiltScrollBound){
+    window.__tiltScrollBound = true;
+    const opts = {passive:true, capture:true};
+    window.addEventListener('scroll', onPageScrollActivity, opts);
+    document.addEventListener('scroll', onPageScrollActivity, opts);
+    window.addEventListener('wheel', onPageScrollActivity, opts);
+    document.addEventListener('wheel', onPageScrollActivity, opts);
+    window.addEventListener('mousewheel', onPageScrollActivity, opts);
+    window.addEventListener('DOMMouseScroll', onPageScrollActivity, opts);
+    window.addEventListener('touchmove', onPageScrollActivity, opts);
+    // hard fallback: if scrollY changed between frames, lock tilt
+    const watch = () => {
+      const y = window.scrollY || document.documentElement.scrollTop || 0;
+      if(Math.abs(y - __lastScrollY) > 0.5){
+        __lastScrollY = y;
+        onPageScrollActivity();
+      }else{
+        __lastScrollY = y;
+      }
+      requestAnimationFrame(watch);
+    };
+    requestAnimationFrame(watch);
+  }
+
+  function bindCardTilt(root){
+    const scope = root || document;
+    const cards = scope.querySelectorAll('.mod-card, .earn-card, .info-card, .kpi, .pos-card, .risk-item, .mode-hero, .alloc, .funds-kpi');
+    cards.forEach(card => {
+      if(card.dataset.tiltBound === '1') return;
+      card.dataset.tiltBound = '1';
+      const max = card.classList.contains('earn-card') ? 2.4 : 3.2;
+      let raf = 0;
+      let lastX = 0;
+      let lastY = 0;
+      let active = false;
+      const clearTilt = (animate) => {
+        active = false;
+        if(raf){ cancelAnimationFrame(raf); raf = 0; }
+        card.classList.remove('tilt-on');
+        if(animate){
+          card.classList.add('tilt-leave');
+          card.style.transition = '';
+          card.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
+          setTimeout(() => {
+            if(active || __tiltScrollLocked) return;
+            card.classList.remove('tilt-leave');
+            card.style.transform = '';
+            card.style.transition = '';
+          }, 160);
+        }else{
+          card.classList.remove('tilt-leave');
+          card.style.transform = '';
+          card.style.transition = '';
+        }
+      };
+      const apply = () => {
+        raf = 0;
+        if(!active || __tiltScrollLocked) return;
+        const r = card.getBoundingClientRect();
+        // if card mostly offscreen, skip
+        if(r.bottom < 0 || r.top > window.innerHeight) return;
+        const px = (lastX - r.left) / Math.max(1, r.width);
+        const py = (lastY - r.top) / Math.max(1, r.height);
+        const cx = Math.max(0, Math.min(1, px));
+        const cy = Math.max(0, Math.min(1, py));
+        const rx = (0.5 - cy) * max;
+        const ry = (cx - 0.5) * max;
+        card.classList.remove('tilt-leave');
+        card.classList.add('tilt-on');
+        card.style.transition = 'none';
+        card.style.transform = 'perspective(1000px) rotateX(' + rx.toFixed(2) + 'deg) rotateY(' + ry.toFixed(2) + 'deg)';
+      };
+      const onMove = (e) => {
+        if(__tiltScrollLocked) return;
+        if(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        // ignore synthetic moves caused purely by layout shift without buttons/pressure change while scrolling
+        if(e.buttons) return; // only pure hover tilt
+        active = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        if(!raf) raf = requestAnimationFrame(apply);
+      };
+      const onLeave = () => clearTilt(true);
+      card.addEventListener('pointermove', onMove, {passive:true});
+      card.addEventListener('pointerleave', onLeave);
+      card.addEventListener('pointercancel', onLeave);
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  
+  function renderAuthKeepalive(d){
+    const el = document.getElementById('authKeepaliveBox');
+    if(!el) return;
+    const ka = d.auth_keepalive || {};
+    if(ka.enabled === false){
+      el.innerHTML = '<span class="note">\u4fdd\u6d3b\u5df2\u5173\u95ed</span>';
+      return;
+    }
+    if(!ka || (!ka.ts && ka.ok==null)){
+      el.innerHTML = '<span class="note">\u6682\u65e0\u4fdd\u6d3b\u8bb0\u5f55\uff08bot \u4e0b\u4e00\u8f6e\u5199\u5165\uff09</span>';
+      return;
+    }
+    const ok = !!ka.ok;
+    const stocks = ka.stocks || {};
+    const lottery = ka.lottery || {};
+    const tsTxt = ka.ts ? new Date(Number(ka.ts)*1000).toLocaleString() : '-';
+    const badge = ok ? '\u6b63\u5e38' : '\u5931\u6548';
+    const cls = ok ? 'ok' : 'bad';
+    let html = '';
+    html += '<span class="earn-chip '+cls+'">\u72b6\u6001 \u00b7 '+badge+'</span>';
+    html += '<span class="earn-chip">\u65f6\u95f4 \u00b7 '+escapeHtml(String(tsTxt))+'</span>';
+    html += '<span class="earn-chip '+(stocks.ok?'ok':'bad')+'">\u80a1\u5e02 \u00b7 '+(stocks.ok?'\u5df2\u767b\u5f55':'\u5931\u6548')+(stocks.latency_ms!=null?(' '+stocks.latency_ms+'ms'):'')+'</span>';
+    if(lottery.skipped){
+      html += '<span class="earn-chip">\u62bd\u5956 \u00b7 \u672a\u63a2\u6d4b</span>';
+    }else{
+      html += '<span class="earn-chip '+(lottery.ok?'ok':'bad')+'">\u62bd\u5956 \u00b7 '+(lottery.ok?'\u5df2\u767b\u5f55':'\u5931\u6548')+(lottery.latency_ms!=null?(' '+lottery.latency_ms+'ms'):'')+'</span>';
+    }
+    if(ka.message){
+      html += '<div class="farm-note" style="margin-top:8px;width:100%">'+escapeHtml(String(ka.message))+'</div>';
+    }
+    if(!ok && ka.manual_reauth_hint){
+      html += '<div class="farm-note" style="margin-top:4px;width:100%">\u624b\u52a8\u7eed\u767b\uff1a'+escapeHtml(String(ka.manual_reauth_hint))+'</div>';
+    }
+    if(ka.cookie_write && ka.cookie_write.rewrote){
+      html += '<div class="farm-note" style="margin-top:4px;width:100%">\u5df2\u56de\u5199 cookie '+escapeHtml(String(ka.cookie_write.count||0))+' \u6761</div>';
+    }
+    el.innerHTML = html;
+  }
+
+
+
+
+
+  
+  let cookieMgrBusy = false;
+  let adminAuthState = {login_required:false, logged_in:false, auth_mode:'open_local', ready:false};
+  let panelStarted = false;
+
+  function cookieAdminHeaders(){
+    return {'Content-Type':'application/json'};
+  }
+  async function adminFetch(url, opts={}){
+    const o = Object.assign({credentials:'same-origin'}, opts||{});
+    o.headers = Object.assign({}, cookieAdminHeaders(), (opts && opts.headers) || {});
+    return fetch(url, o);
+  }
+  function setGateMsg(msg, cls){
+    const el = document.getElementById('gateMsg');
+    if(!el) return;
+    el.textContent = msg || '';
+    el.className = 'login-msg' + (cls ? (' ' + cls) : '');
+  }
+  function setCookieMsg(msg, cls){
+    const el = document.getElementById('cookieMgrMsg');
+    if(!el) return;
+    el.textContent = msg || '';
+    el.className = 'cookie-msg' + (cls ? (' ' + cls) : '');
+  }
+  function showLoginGate(show){
+    const gate = document.getElementById('loginGate');
+    if(gate) gate.classList.toggle('hidden', !show);
+    document.body.classList.toggle('login-locked', !!show);
+    document.body.classList.toggle('admin-logged-in', !show && !!adminAuthState.logged_in);
+  }
+  function enterPanel(){
+    showLoginGate(false);
+    if(panelStarted) return;
+    panelStarted = true;
+    try{
+      if(typeof schedule === 'function') schedule();
+      if(typeof refresh === 'function') refresh(true);
+    }catch(e){}
+  }
+  function lockPanel(msg){
+    panelStarted = false;
+    if(typeof timer !== 'undefined' && timer){ try{ clearInterval(timer); }catch(e){} timer=null; }
+    showLoginGate(true);
+    if(msg) setGateMsg(msg, 'bad');
+  }
+  function renderCookieStatus(st){
+    if(!st) return;
+    setTextIfChanged('cookiePath', st.path || '-');
+    setTextIfChanged('cookieCount', (st.count==null?'-':String(st.count)));
+    let mode = st.auth_mode || '-';
+    if(st.auth_mode === 'login_required') mode = '需要登录';
+    else if(st.auth_mode === 'token_required') mode = '需要令牌';
+    else if(st.auth_mode === 'open_local') mode = '本机开放';
+    if(st.login_required){
+      mode += st.logged_in ? ' · 已登录' : ' · 未登录';
+    }
+    setTextIfChanged('cookieAuthMode', mode);
+    setTextIfChanged('cookieMtime', st.mtime_text || (st.mtime ? new Date(Number(st.mtime)*1000).toLocaleString() : '-'));
+  }
+  function renderCookieList(list){
+    const box = document.getElementById('cookieListBox');
+    if(!box) return;
+    const arr = (list && list.cookies) ? list.cookies : [];
+    if(!arr.length){
+      const html = '<div class="note">暂无 cookie</div>';
+      if(box.innerHTML !== html) box.innerHTML = html;
+      return;
+    }
+    let html = '';
+    arr.forEach(it => {
+      const name = escapeHtml(String(it.name||'-'));
+      const domain = escapeHtml(String(it.domain||'-'));
+      const path = escapeHtml(String(it.path||'/'));
+      const val = escapeHtml(String(it.value||''));
+      const sec = it.secure ? '是' : '否';
+      const ho = it.httpOnly ? '是' : '否';
+      html += '<div class="cookie-item">';
+      html += '<div class="n">'+name+' <span class="note">· 已脱敏</span></div>';
+      html += '<div class="m">域名 '+domain+' · 路径 '+path+' · 安全 '+sec+' · 仅HTTP '+ho+'</div>';
+      html += '<div class="m">值 '+val+'</div>';
+      html += '</div>';
+    });
+    if(box.innerHTML !== html) box.innerHTML = html;
+  }
+  async function refreshAdminAuth(){
+    try{
+      const r = await adminFetch('/api/admin/auth/status');
+      const d = await r.json();
+      adminAuthState = {
+        login_required: !!d.login_required,
+        logged_in: d.login_required ? !!d.logged_in : true,
+        auth_mode: d.auth_mode || 'open_local',
+        ready: true
+      };
+      return d;
+    }catch(e){
+      adminAuthState = {login_required:true, logged_in:false, auth_mode:'unknown', ready:true};
+      return null;
+    }
+  }
+  async function ensurePanelAccess(){
+    const d = await refreshAdminAuth();
+    if(!adminAuthState.login_required){
+      setGateMsg('本机开放模式，正在进入面板…', 'ok');
+      enterPanel();
+      return true;
+    }
+    if(adminAuthState.logged_in){
+      setGateMsg('已登录，正在进入面板…', 'ok');
+      enterPanel();
+      return true;
+    }
+    lockPanel('请先登录管理账号');
+    return false;
+  }
+  async function gateLogin(){
+    const user = (document.getElementById('gateUser')?.value || 'admin').trim() || 'admin';
+    const pass = (document.getElementById('gatePass')?.value || '');
+    setGateMsg('正在登录…');
+    try{
+      const r = await adminFetch('/api/admin/login', {
+        method:'POST',
+        body: JSON.stringify({username:user, password:pass})
+      });
+      const d = await r.json().catch(()=>({}));
+      if(!r.ok || !d.ok){
+        setGateMsg(d.message || d.error || '登录失败', 'bad');
+        return;
+      }
+      setGateMsg(d.message || '登录成功', 'ok');
+      await ensurePanelAccess();
+// login gate enter key
+(function(){
+  const pass=document.getElementById('gatePass');
+  if(pass){
+    pass.addEventListener('keydown', function(e){
+      if(e.key==='Enter'){ e.preventDefault(); gateLogin(); }
+    });
+  }
+})();
+
+    }catch(e){
+      setGateMsg('登录失败：'+String(e.message||e), 'bad');
+    }
+  }
+  async function gateLogout(){
+    try{
+      await adminFetch('/api/admin/logout', {method:'POST', body:'{}'});
+    }catch(e){}
+    const pass = document.getElementById('gatePass');
+    if(pass) pass.value = '';
+    lockPanel('已退出，请重新登录');
+  }
+  // 兼容旧函数名
+  async function adminLogin(){ return gateLogin(); }
+  async function adminLogout(){ return gateLogout(); }
+
+  function buildCookieImportBody(raw){
+    return JSON.stringify({text:String(raw||'').trim()});
+  }
+  async function refreshCookieManager(opts={}){
+    if(!panelStarted) return null;
+    if(cookieMgrBusy && !opts.force) return;
+    const silent = !!opts.silent;
+    try{
+      if(!silent) setCookieMsg('正在刷新…');
+      const [stR, listR] = await Promise.all([
+        adminFetch('/api/auth/cookies/status'),
+        adminFetch('/api/auth/cookies')
+      ]);
+      if(stR.status === 401 || listR.status === 401){
+        lockPanel('登录已失效，请重新登录');
+        return null;
+      }
+      const st = await stR.json();
+      const list = await listR.json();
+      if(st && st.ok !== false) renderCookieStatus(st);
+      if(list && list.ok !== false) renderCookieList(list);
+      if(!silent){
+        const msg = (st && st.message) ? st.message : '状态已刷新';
+        setCookieMsg(msg, 'ok');
+      }
+      return {st, list};
+    }catch(e){
+      setCookieMsg('刷新失败：'+String(e.message||e), 'bad');
+      if(!silent) toast(String(e.message||e), 'err', 'Cookie');
+      return null;
+    }
+  }
+  async function probeCookies(){
+    if(!panelStarted) return;
+    if(cookieMgrBusy) return;
+    cookieMgrBusy = true;
+    setCookieMsg('正在探测登录…');
+    try{
+      const r = await adminFetch('/api/auth/cookies/probe', {method:'POST', body:'{}'});
+      const d = await r.json().catch(()=>({}));
+      if(r.status === 401){
+        lockPanel('登录已失效，请重新登录');
+        return;
+      }
+      const ok = !!(d.ok || (d.probe && d.probe.ok));
+      setCookieMsg(d.message || (ok ? '探测成功' : '探测失败'), ok ? 'ok' : 'bad');
+      toast(d.message || (ok?'探测成功':'探测失败'), ok?'ok':'err', 'Cookie 探测');
+      await refreshCookieManager({silent:true, force:true});
+    }catch(e){
+      setCookieMsg('探测失败：'+String(e.message||e), 'bad');
+      toast(String(e.message||e), 'err', 'Cookie 探测');
+    }finally{
+      cookieMgrBusy = false;
+    }
+  }
+  async function importCookies(){
+    if(!panelStarted) return;
+    if(cookieMgrBusy) return;
+    const ta = document.getElementById('cookieImportText');
+    const raw = (ta && ta.value || '').trim();
+    if(!raw){
+      setCookieMsg('请先粘贴 cookie 原值或 JSON', 'bad');
+      toast('请先粘贴 cookie 内容', 'warn', 'Cookie 导入');
+      return;
+    }
+    cookieMgrBusy = true;
+    setCookieMsg('正在导入并探测…');
+    try{
+      const r = await adminFetch('/api/auth/cookies/import', {
+        method:'POST',
+        body: buildCookieImportBody(raw)
+      });
+      const d = await r.json().catch(()=>({}));
+      if(r.status === 401){
+        lockPanel('登录已失效，请重新登录');
+        return;
+      }
+      const ok = !!d.ok;
+      const msg = d.message || (ok ? '导入完成' : (d.error || '导入失败'));
+      setCookieMsg(msg, ok ? 'ok' : 'bad');
+      toast(msg, ok?'ok':'err', 'Cookie 导入');
+      await refreshCookieManager({silent:true, force:true});
+    }catch(e){
+      setCookieMsg('导入失败：'+String(e.message||e), 'bad');
+      toast(String(e.message||e), 'err', 'Cookie 导入');
+    }finally{
+      cookieMgrBusy = false;
+    }
+  }
+  async function clearCookies(){
+    if(!panelStarted) return;
+    if(cookieMgrBusy) return;
+    if(!confirm('确认清除 cookie？\n会先自动备份，但 bot 下一轮可能掉登录。')) return;
+    cookieMgrBusy = true;
+    setCookieMsg('正在清除…');
+    try{
+      const r = await adminFetch('/api/auth/cookies/clear', {method:'POST', body:'{}'});
+      const d = await r.json().catch(()=>({}));
+      if(r.status === 401){
+        lockPanel('登录已失效，请重新登录');
+        return;
+      }
+      const ok = !!d.ok;
+      let msg = d.message || (ok ? '已清除' : (d.error || '清除失败'));
+      if(ok && d.backup) msg += '；备份 '+d.backup;
+      setCookieMsg(msg, ok ? 'ok' : 'bad');
+      toast(msg, ok?'ok':'warn', 'Cookie 清除');
+      await refreshCookieManager({silent:true, force:true});
+    }catch(e){
+      setCookieMsg('清除失败：'+String(e.message||e), 'bad');
+      toast(String(e.message||e), 'err', 'Cookie 清除');
+    }finally{
+      cookieMgrBusy = false;
+    }
+  }
+
+async function refresh(manual=false){
+  if(!panelStarted) return;
+  if(refreshing) return;
+  setRefreshing(true, manual);
+  try{
+    // 刷新期间冻结 tilt，避免赚钱/卡片重绘闪屏
+    if (typeof setTiltScrollLock === 'function') setTiltScrollLock(true);
+    const r = await fetch('/api/overview', {credentials:'same-origin'});
+    if(r.status===401){ lockPanel('登录已失效，请重新登录'); return; }
+    const d = await r.json();
+    if(d.error) throw new Error(d.error);
+    const acc=d.account||{}, idx=d.index||{}, svc=d.service||{};
+    const control=(d.control||svc.control||{}).trade_mode||'auto';
+    const profile=d.profile||svc.profile||'balanced';
+    const liveOk = !!(svc.status==='running' && d.auth_ok);
+    let liveReason = '';
+    if(!liveOk){
+      if(svc.status && svc.status!=='running') liveReason = String(svc.status);
+      else if(!d.auth_ok) liveReason = '未登录';
+      else if(d.auth_keepalive && d.auth_keepalive.ok===false) liveReason = '保活失效';
+      else liveReason = '离线';
+    }
+    setLiveStatus(liveOk, liveReason);
+    // only clock; silent auto refresh does not flash extra labels
+    setTextIfChanged('updated', new Date().toLocaleTimeString());
+    setTextIfChanged('equity', fmt(acc.equity));
+    const pnlEl=document.getElementById('pnl');
+    const pnlText=`${fmt(acc.pnl)} (${pct(acc.pnl_pct)})`;
+    if(pnlEl && pnlEl.textContent !== pnlText) pnlEl.textContent=pnlText;
+    if(pnlEl) setClassIfChanged(pnlEl, 'sub '+clsPnl(acc.pnl));
+    setTextIfChanged('cash', fmt(acc.cash));
+    setTextIfChanged('stockValue', fmt(acc.stock_value));
+    setTextIfChanged('indexPrice', fmt(idx.price));
+    const ic=document.getElementById('indexChg');
+    const icText=`${pct(idx.change_pct)} · B${d.buy_count||0}/S${d.sell_count||0}`;
+    if(ic && ic.textContent !== icText) ic.textContent=icText;
+    if(ic) setClassIfChanged(ic, 'sub '+clsPnl(idx.change_pct));
+    const st=d.trade_stats||{};
+    setTextIfChanged('tradeStats', `${st.ok_count??st.ok??0} / ${st.err_count??st.failed??st.error??0}`);
+    setTextIfChanged('authInfo', d.auth_ok?'已登录':'未登录');
+    setTextIfChanged('userName', d.user_name||'账户');
+    setTextIfChanged('cycleInfo', `${(acc.positions||[]).length}仓 · #${svc.cycle||'-'}`);
+
+    // top keeps only 3 key chips: mode / control / regime
+    const modeName=(acc.mode||d.mode||'-');
+    setPill(document.getElementById('modePill'), String(modeName).toUpperCase(), modeName==='live'?'live':'paper');
+    const CONTROL_TEXT={auto:'自动', sell_only:'只卖', paused:'暂停'};
+    setPill(document.getElementById('controlPill'), CONTROL_TEXT[control]||control, control);
+    const regimeName=(d.regime&&d.regime.name)||svc.regime||'neutral';
+    const REGIME_TEXT={neutral:'中性',risk_on:'进攻',risk_off:'防守',crash:'危机'};
+    setPill(document.getElementById('regimePill'), REGIME_TEXT[regimeName]||regimeName, regimeName==='crash'?'err':(regimeName==='risk_off'?'warn':(regimeName==='risk_on'?'run':'')));
+    const risk=d.risk||{};
+    setTextIfChanged('riskStop', fmtPctRatio(risk.stop_loss_pct));
+    setTextIfChanged('riskTake', fmtPctRatio(risk.take_profit_pct));
+    setTextIfChanged('riskTrail', fmtPctRatio(risk.trailing_stop_pct));
+    setTextIfChanged('riskSingle', fmtPctRatio(risk.max_single_position_pct));
+    setTextIfChanged('riskCash', fmtPctRatio(risk.cash_reserve_pct));
+    setTextIfChanged('riskNew', String(risk.max_new_entries_per_cycle ?? '-'));
+    setTextIfChanged('riskMaxPos', String(risk.max_positions ?? '-'));
+    setTextIfChanged('riskScale', fmtPctRatio(risk.position_scale ?? 1));
+    setTextIfChanged('riskReduce', fmtPctRatio(risk.reduce_fraction ?? 0));
+
+    markControlButtons(control);
+    window.__lastControl = d.control || {trade_mode:control, capital_style:(d.control||{}).capital_style||'prefer_hold'};
+    markCapitalStyle((d.control||{}).capital_style||'prefer_hold');
+
+    const positions=[...(acc.positions||[])];
+    const equity=Number(acc.equity||0)||1;
+    const cash=Number(acc.cash||0);
+    positions.sort((a,b)=>Number(b.market_value||0)-Number(a.market_value||0));
+    const posBody=document.getElementById('posBody');
+    if(!positions.length){
+      setHtmlIfChanged(posBody, '<div class="note">暂无持仓</div>');
+      setTextIfChanged('posHint', '空仓');
+      setTextIfChanged('posHintMini', '空仓');
+      setTextIfChanged('cashPct', '100%');
+      setTextIfChanged('cashPctMini', '100%');
+      setStylePropIfChanged(document.getElementById('cashDonut'), '--p', '100%');
+      setStylePropIfChanged(document.getElementById('cashDonutMini'), '--p', '100%');
+      const cashLegend=`<div class="legend-item"><i style="background:#6ea8ff"></i><span>现金</span><strong>100%</strong></div>`;
+      setHtmlIfChanged(document.getElementById('allocLegend'), cashLegend);
+      setHtmlIfChanged(document.getElementById('allocLegendMini'), cashLegend);
+      setTextIfChanged('overviewNote', '空仓');
+    }else{
+      let totalMv=0;
+      const rows=positions.map((p,idx)=>{
+        const shares=Number(p.shares??p.quantity??0);
+        const avg=Number(p.avg_price??p.cost_price??p.avg_cost??0);
+        const px=Number(p.price??p.current_price??p.mark_price??avg);
+        const mv=Number(p.market_value??(px*shares));
+        totalMv+=mv;
+        const pnl=Number(p.pnl??((px-avg)*shares));
+        const pnlPct=Number(p.pnl_pct??(avg?(px-avg)/avg:0));
+        const weight=mv/equity;
+        const code=p.code||p.symbol||p.stock_id||p.id;
+        const name=p.name||'';
+        const color=PALETTE[idx%PALETTE.length];
+        return {
+          weight, color, name, code, mv,
+          html:`<div class="pos-card">
+            <div>
+              <div class="title">${name||code}</div>
+              <div class="sub">${code} · ${fmt(shares,4)} 股</div>
+              <div class="bars"><div class="bar"><i style="width:${Math.min(100,weight*100).toFixed(1)}%;background:${color}"></i></div><span>${(weight*100).toFixed(1)}%</span></div>
+            </div>
+            <div class="metric"><div class="v">${fmt(avg)} / ${fmt(px)}</div><div class="s">成本 / 现价</div></div>
+            <div class="metric"><div class="v">${fmt(mv)}</div><div class="s">市值</div></div>
+            <div class="metric"><div class="v ${clsPnl(pnl)}">${fmt(pnl)}</div><div class="s ${clsPnl(pnl)}">${pct(pnlPct)}</div></div>
+          </div>`,
+          legend:`<div class="legend-item"><i style="background:${color}"></i><span>${name||code}</span><strong>${(weight*100).toFixed(1)}%</strong></div>`
+        };
+      });
+      setHtmlIfChanged(posBody, rows.map(x=>x.html).join(''));
+      const cashWeight=Math.max(0, cash/Math.max(1, equity));
+      const stockWeight=Math.max(0, 1 - cashWeight);
+      const cashTxt=(cashWeight*100).toFixed(1)+'%';
+      const stockTxt=(stockWeight*100).toFixed(1)+'%';
+      // center label: if almost all invested, show 持仓占比 instead of misleading 0% cash ring
+      const centerTxt = cashWeight < 0.005 ? stockTxt : cashTxt;
+      const centerLabel = cashWeight < 0.005 ? '持仓占比' : '现金占比';
+      setTextIfChanged('cashPct', centerTxt);
+      setTextIfChanged('cashPctMini', centerTxt);
+      const donutEls = [document.getElementById('cashDonut'), document.getElementById('cashDonutMini')];
+      donutEls.forEach(el => {
+        if(!el) return;
+        const label = el.querySelector('span');
+        if(label) label.textContent = centerLabel;
+      });
+      // multi-slice pie: holdings + cash (cash last)
+      let accW = 0;
+      const stops = [];
+      rows.forEach(r => {
+        const w = Math.max(0, Number(r.weight)||0);
+        if(w <= 0) return;
+        const from = (accW*100).toFixed(2)+'%';
+        accW += w;
+        const to = (Math.min(1, accW)*100).toFixed(2)+'%';
+        stops.push(r.color + ' ' + from + ' ' + to);
+      });
+      if(cashWeight > 0.0005){
+        const from = (accW*100).toFixed(2)+'%';
+        const to = '100%';
+        stops.push('#8fa3c4 ' + from + ' ' + to);
+      }else if(!stops.length){
+        stops.push('#8fa3c4 0% 100%');
+      }else{
+        // ensure full circle when cash ~ 0 due to rounding
+        const last = stops[stops.length-1];
+        stops[stops.length-1] = last.replace(/ [0-9.]+%$/, ' 100%');
+      }
+      const pie = stops.join(', ');
+      const bg = 'radial-gradient(circle at center, rgba(8,12,22,.90) 54%, transparent 55%), conic-gradient(from 210deg, ' + pie + ')';
+      donutEls.forEach(el => {
+        if(!el) return;
+        if(el.style.background !== bg) el.style.background = bg;
+        // keep --p for fallback css
+        setStylePropIfChanged(el, '--p', Math.min(100, (cashWeight < 0.005 ? stockWeight : cashWeight)*100).toFixed(1)+'%');
+      });
+      const legend=`<div class="legend-item"><i style="background:#8fa3c4"></i><span>现金</span><strong>${cashTxt}</strong></div>`+rows.map(x=>x.legend).join('');
+      setHtmlIfChanged(document.getElementById('allocLegend'), legend);
+      setHtmlIfChanged(document.getElementById('allocLegendMini'), rows.slice(0,4).map(x=>x.legend).join('')+`<div class="legend-item"><i style="background:#8fa3c4"></i><span>现金</span><strong>${cashTxt}</strong></div>`);
+      setTextIfChanged('posHint', `${positions.length}只 · ${fmt(totalMv)}`);
+      setTextIfChanged('posHintMini', `${positions.length}只`);
+      const top=positions[0];
+      setTextIfChanged('overviewNote', `${top.name||top.code} · 持仓${stockTxt}`);
+    }
+
+    const sigs=d.top_signals||[];
+    setTextIfChanged('sigHint', `${sigs.length}条 · B${d.buy_count||0}/S${d.sell_count||0}`);
+    const sigBody=document.getElementById('sigBody');
+    if(!sigs.length){
+      setHtmlIfChanged(sigBody, '<tr><td colspan="5" class="reason">暂无信号</td></tr>');
+    }else{
+      setHtmlIfChanged(sigBody, sigs.map(s=>{
+        const act=s.action||'hold';
+        const score=Number(s.score||0);
+        const scorePct=Math.min(100,Math.abs(score)*100);
+        return `<tr>
+          <td><div class="code">${s.code||s.stock_id}</div><div class="name">${s.name||''}</div></td>
+          <td><span class="pill ${act}">${zhTradeAction(act)}</span></td>
+          <td class="${clsPnl(s.score)}"><div class="scorebar ${score<0?'neg':''}"><i style="width:${scorePct.toFixed(1)}%"></i></div>${fmt(s.score,3)}</td>
+          <td>${fmt(s.price)}</td>
+          <td class="reason">${formatSignalReason(s.reason||'')}</td>
+        </tr>`;
+      }).join(''));
+    }
+
+    const trades=d.recent_trades||[];
+    setTextIfChanged('tradeHint', `${trades.length}条 · 成${st.ok_count??st.ok??0}/败${st.err_count??st.failed??st.error??0}`);
+    const tradeBody=document.getElementById('tradeBody');
+    if(!trades.length){
+      setHtmlIfChanged(tradeBody, '<tr><td colspan="5" class="reason">暂无成交</td></tr>');
+    }else{
+      setHtmlIfChanged(tradeBody, trades.map(t=>{
+        const side=t.side||'';
+        return `<tr>
+          <td>${ts(t.ts)}</td>
+          <td><div class="code">${t.code||t.stock_id||''}</div><div class="name">${t.mode||''}</div></td>
+          <td><span class="pill ${side}">${zhSide(side)}</span></td>
+          <td>${fmt(t.shares,4)} 股 · 价 ${fmt(t.price)}</td>
+          <td><span class="pill ${String(t.status||'').toLowerCase()}">${zhStatus(t.status||'')}</span><div class="reason">${formatTradeReason(t)}</div></td>
+        </tr>`;
+      }).join(''));
+    }
+
+    // equity/cash chart
+    chartSeriesCache = Array.isArray(d.equity_series) ? d.equity_series : [];
+    drawEquityChart(chartSeriesCache, false);
+
+    const logs = (d.log_tail||[]).slice(-3);
+    const shortLog = (x)=>{
+      let s='';
+      if(typeof x === 'string') s=x;
+      else if(x && typeof x === 'object') s=[x.level||'', x.msg||x.message||''].filter(Boolean).join(' ') || JSON.stringify(x);
+      else s=String(x||'');
+      s=String(s).replace(/\s+/g,' ').trim();
+      if(s.length>72) s=s.slice(0,72)+'…';
+      return s;
+    };
+    const svcLines = [];
+    const STATUS_TEXT={running:'运行中', stopped:'已停止', error:'错误'};
+    const PROFILE_TEXT={balanced:'均衡', aggressive:'进攻', conservative:'保守'};
+    svcLines.push(`${STATUS_TEXT[svc.status]||svc.status||'-'}  #${svc.cycle||'-'}  ${PROFILE_TEXT[profile]||profile||'-'}`);
+    svcLines.push(`${CONTROL_TEXT[control]||control||'-'} · ${REGIME_TEXT[regimeName]||regimeName||'-'} · 登录 ${d.auth_ok?'是':'否'}`);
+    if(svc.last_error) svcLines.push(`err ${shortLog(svc.last_error)}`);
+    if(d.ts) svcLines.push(ts(d.ts));
+    const svcText = svcLines.join('\n');
+    const serviceBox=document.getElementById('serviceBox');
+    if(serviceBox && serviceBox.textContent !== svcText) serviceBox.textContent=svcText;
+    setTextIfChanged('svcHint', d.ts?ts(d.ts):(svc.status||'-'));
+
+    // farm automation status
+    const farm = d.farm || {};
+    const plots = farm.plots || {};
+    setTextIfChanged('farmEmpty', farm.enabled===false ? '关' : String(plots.empty ?? '-'));
+    setTextIfChanged('farmGrowing', String(plots.growing ?? '-'));
+    setTextIfChanged('farmReady', String(plots.ready ?? '-'));
+    setTextIfChanged('farmPlanted', String((farm.planted||[]).length));
+    setTextIfChanged('farmHarvested', String((farm.harvested||[]).length));
+    setTextIfChanged('farmStolen', String((farm.stolen||[]).length));
+    setTextIfChanged('farmCrop', zhCrop(farm.crop_key || ((farm.analysis||{}).best||{}).name || '-'));
+    setTextIfChanged('farmStealLeft', farm.steal_left==null ? '-' : String(farm.steal_left));
+    setTextIfChanged('farmErrors', String((farm.errors||[]).length));
+    const farmErr = (farm.errors||[])[0] || '';
+    const cropReason = zhCrop(farm.crop_reason || '');
+    const farmNote = farm.enabled===false
+      ? '农场自动化已关闭'
+      : (farm.skipped ? ('冷却中' + (cropReason ? (' · ' + cropReason) : ''))
+        : (farmErr ? ('最近错误: '+String(farmErr).slice(0,48))
+          : (cropReason || '自动种植 / 收获 / 偷菜')));
+    setTextIfChanged('farmNote', farmNote);
+    setTextIfChanged('farmHint', farm.ts ? ts(farm.ts) : '-');
+    const side = d.side_hustle || {};
+    let sideTxt = '侧线待命';
+    if (side.enabled === false) sideTxt = '侧线关闭';
+    else if (side.skipped) sideTxt = '侧线冷却';
+    else {
+      const ipoN = (side.ipo||[]).filter(x=>x && x.status==='ok').length;
+      const betN = (side.bets||[]).filter(x=>x && x.status==='ok').length;
+      const fundN = (side.funds||[]).filter(x=>x && x.status==='ok').length;
+      const errN = (side.errors||[]).length;
+      const best = ((side.analysis||{}).ipo||{}).best || {};
+      const score = best.score!=null ? Number(best.score).toFixed(3) : null;
+      sideTxt = `侧线 IPO+${ipoN} 对赌+${betN} 基金+${fundN}` + (errN?` 错${errN}`:'');
+      if (best.name) sideTxt += ` · ${best.name}`;
+      if (score!=null) sideTxt += ` EV分${score}`;
+      const cap = ((side.analysis||{}).capital||{}).recommendations || [];
+      if (cap[0]) sideTxt += ` | ${String(cap[0]).slice(0,28)}`;
+    }
+    setTextIfChanged('sideNote', sideTxt);
+
+    // auto refresh stays silent; only manual refresh toasts
+    if(manual) toast('已同步', 'ok', '刷新');
+    renderModules(d);
+    renderFunds(d);
+    renderEarn(d);
+    renderInfo(d);
+    renderFeatureFlagPanel(d);
+    renderAuthKeepalive(d);
+    if(currentTab==='control') refreshCookieManager({silent:true});
+    bindCardTilt(document);
+  }catch(e){
+    setTextIfChanged('updated', '同步失败');
+    setLiveStatus(false, '离线');
+    if(manual) toast(String(e.message||e), 'err', '刷新失败');
+  }finally{
+    setRefreshing(false, false);
+    if (typeof setTiltScrollLock === 'function') {
+      // 短暂保持冻结，等布局稳定
+      setTimeout(() => setTiltScrollLock(false), 120);
+    }
+  }
+}
+
+function toggleAuto(){
+  auto=!auto;
+  const btn=document.getElementById('autoBtn');
+  const label=btn.querySelector('.label') || btn;
+  label.textContent='自动 '+(auto?'开':'关');
+  btn.classList.toggle('active', auto);
+  if(auto){
+    schedule();
+  }else if(timer){
+    clearInterval(timer); timer=null;
+  }
+}
+function schedule(){ if(timer) clearInterval(timer); timer=setInterval(()=>refresh(false), refreshSec*1000); }
+
+document.getElementById('tabs').addEventListener('click', (e)=>{
+  const btn=e.target.closest('.tab');
+  if(!btn) return;
+  switchTab(btn.dataset.tab);
+});
+
+document.getElementById('modalCancel').addEventListener('click', closeModal);
+document.getElementById('modalOk').addEventListener('click', confirmModal);
+document.getElementById('modalMask').addEventListener('click', (e)=>{
+  if(e.target.id==='modalMask') closeModal();
+});
+
+document.addEventListener('keydown', (e)=>{
+  const tag=(e.target&&e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||e.target?.isContentEditable) return;
+  const modalOpen=document.getElementById('modalMask').classList.contains('show');
+  if(modalOpen){
+    if(e.key==='Escape'){ e.preventDefault(); closeModal(); }
+    if(e.key==='Enter'){ e.preventDefault(); confirmModal(); }
+    return;
+  }
+  if(e.key==='Escape') return;
+  if(e.key==='r' || e.key==='R'){ e.preventDefault(); refresh(true); return; }
+  if(e.key>='1' && e.key<='8'){
+    e.preventDefault();
+    switchTab(TAB_ORDER[Number(e.key)-1]);
+  }
+});
+
+try{
+  const saved=localStorage.getItem('fzsm_tab');
+  if(saved) switchTab(saved, {silent:true, force:true});
+}catch(e){}
+
+document.getElementById('autoBtn')?.classList.add('active');
+
+window.addEventListener('resize', ()=>{ if(chartSeriesCache && chartSeriesCache.length) drawEquityChart(chartSeriesCache, true); });
+
+// 未登录只显示登录页；登录成功后才 refresh/schedule
+ensurePanelAccess();
+</script>
+</body>
+</html>

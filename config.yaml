@@ -1,0 +1,256 @@
+# fzsm cyberbourse AI bot config
+api_base: "https://fanzisima.xyz/stocks/api"
+cookie_file: "auth/cookies.json"
+browser_profile_dir: "auth/browser-profile"
+
+# cookie ??????????????????
+auth:
+  keepalive_enabled: true
+  keepalive_every_cycles: 3
+  probe_lottery: true
+
+
+# LLM / API ?????????????????
+# SillyTavern: https://api.fanzisima.xyz/v1  ??? /v1?
+# CherryStudio / RikkaHub: https://api.fanzisima.xyz ????? /v1?
+llm:
+  track_enabled: true
+  base_url: "https://api.fanzisima.xyz/v1"
+  base_url_alt: "https://api.fanzisima.xyz"
+  api_key_env: "FZSM_LLM_API_KEY"
+  # ?????? key?????????????
+  # api_key: ""
+  price_input_per_1m: 0
+  price_output_per_1m: 0
+  currency: "CNY"
+# paper = ???  live = ??
+mode: live
+
+loop:
+  interval_sec: 18
+  kline_period: "1m"
+  kline_limit: 90
+  max_candidates: 14
+  sse_enabled: false
+  top_n_trade: 3
+
+universe:
+  asset_types: ["stock", "crypto"]
+  exclude_suspended: true
+  exclude_delisted: true
+  min_price: 0.01
+
+strategy:
+  # balanced = ??: ??????, ???, ??
+  profile: balanced
+  ema_fast: 9
+  ema_slow: 21
+  rsi_period: 14
+  rsi_oversold: 35
+  rsi_overbought: 68
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  atr_period: 14
+  volume_ma: 20
+  use_site_ai: false
+  site_ai_weight: 0.15
+  news_weight: 0.15
+  momentum_weight: 0.12
+  breakout_weight: 0.08
+  min_score_enter: 0.48
+  min_score_exit: -0.15
+  prefer_crypto_boost: 0.02
+  volatility_dampen: 0.82
+  chase_penalty: 0.10
+  # freqtrade-style hard entry confirmation
+  require_entry_confirm: true
+  min_entry_confirms: 3
+  entry_rsi_min: 42
+  entry_rsi_max: 66
+
+# market regime (big move / crash handling)
+regime:
+  enabled: true
+  crash_index_pct: -0.08
+  risk_off_index_pct: -0.035
+  risk_on_index_pct: 0.02
+  breadth_crash: 0.72
+  breadth_risk_off: 0.62
+  shock_avg_abs_change: 0.09
+  # crash
+  crash_max_positions: 2
+  crash_position_scale: 0.0
+  crash_enter_boost: 0.30
+  crash_stop_loss_pct: 0.05
+  crash_take_profit_pct: 0.10
+  crash_trailing_stop_pct: 0.06
+  crash_reduce_fraction: 0.50
+  # risk_off
+  risk_off_allow_entries: false
+  risk_off_max_positions: 3
+  risk_off_max_new_entries: 0
+  risk_off_position_scale: 0.55
+  risk_off_enter_boost: 0.12
+  risk_off_stop_loss_pct: 0.06
+  risk_off_take_profit_pct: 0.14
+  risk_off_trailing_stop_pct: 0.08
+  risk_off_reduce_fraction: 0.35
+  # risk_on
+  risk_on_max_positions: 6
+  risk_on_max_new_entries: 1
+  risk_on_position_scale: 1.0
+  risk_on_enter_boost: -0.02
+
+risk:
+  max_positions: 6
+  position_pct: 0.12
+  max_position_pct: 0.20
+  cash_reserve_pct: 0.12
+  stop_loss_pct: 0.08
+  take_profit_pct: 0.22
+  trailing_stop_pct: 0.10
+  # trailing only after this profit offset (freqtrade style)
+  trailing_stop_positive_offset: 0.04
+  # ROI ladder minutes -> min pnl
+  use_roi_ladder: true
+  roi_table:
+    0: 0.22
+    30: 0.12
+    90: 0.06
+    180: 0.02
+  cooldown_sec: 90
+  min_shares: 1
+  max_shares_per_order: 5000000
+  paper_cash: 1000000
+  max_notional_per_order: 500000
+  max_new_entries_per_cycle: 1
+  max_single_position_pct: 0.22
+  min_trade_gap_sec: 1.5
+  no_add_loss_pct: 0.04
+  # EV / Kelly sizing for profit-max entries
+  kelly_fraction: 0.35
+  fee_rate: 0.001
+
+storage:
+  db_path: "data/bot.db"
+  log_dir: "logs"
+
+dashboard:
+  host: "127.0.0.1"
+  # Go dashboard primary port (Python removed)
+  port: 8787
+  refresh_sec: 4
+
+service:
+  state_file: "data/service_state.json"
+  pid_file: "data/service.pid"
+
+
+# frontend farm automation (plant / harvest / steal)
+farm:
+  enabled: true
+  # auto = max hourly ROI from live /farm/me crop table
+  crop_key: "auto"
+  crop_mode: "max_ev_hourly"   # max_ev_hourly | fixed
+  steal_enabled: true
+  max_plant_per_cycle: 12
+  max_harvest_per_cycle: 12
+  max_steal_per_cycle: 5
+  min_interval_sec: 20
+  harvest_latency_sec: 25   # bot online harvest lag used in steal EV
+  offline_gap_sec: 0
+
+# side modules (frontend-real APIs only)
+side_hustle:
+  enabled: true
+  min_interval_sec: 45
+  ipo:
+    enabled: true
+    amount_lobster: 3000
+    min_amount_lobster: 3000
+    max_per_cycle: 1
+    # allow mild oversub; EV math uses fill=1/progress
+    max_progress: 3.0
+    max_total_lobster: 30000
+    assumed_list_return: 0.12   # listing expected return prior
+    cash_hourly_opp_cost: 0.00005
+    min_score: 0.0
+  bets:
+    enabled: true   # scan open bets; accept only if EV model says positive
+    max_accept_per_cycle: 1
+    max_stake_lobster: 5000
+    assumed_edge: -0.05
+  funds:
+    enabled: true   # scan funds; subscribe only if return_30d net EV>0
+    max_subscribe_lobster: 10000
+    min_return_30d: 0.02
+  alloc:
+    min_cash_pct: 0.12
+    max_ipo_pct: 0.08
+    max_margin_pct: 0.10
+
+# capital allocation among cash-using modules
+# (side_hustle.alloc)
+# futures / margin EV module
+derivatives:
+  enabled: true
+  # full executable path implemented; keep false for safety until you want live margin
+  trade_enabled: false
+  min_interval_sec: 60
+  min_score: 0.35
+  max_leverage: 3
+  max_notional: 50000
+  max_new_per_cycle: 1
+  max_open_positions: 2
+  max_close_per_cycle: 1
+  auto_close_loss: true
+  close_loss_pct: 0.08
+  close_any_negative: false
+  fee_rate: 0.001
+
+# lottery domain https://api.fanzisima.xyz/lottery/page
+lottery:
+  enabled: true
+  auto_checkin: true
+  auto_draw_free: true
+  auto_draw_premium_free: true
+  max_free_draws_per_cycle: 10
+  max_free_premium_draws_per_cycle: 3
+  auto_slot: false
+  auto_yolo: false
+  auto_nailong: false
+  auto_vip: false
+  auto_vip_ready: true
+  auto_vip_bet: false
+  auto_borrow_zero_rate: false
+  auto_deposit: false
+  auto_bankruptcy: false
+  deposit_amount: 0
+  deposit_hours: 24
+  borrow_amount: 1000
+
+brokers:
+  enabled: true
+  auto_like: true
+  max_likes_per_cycle: 1
+  auto_underwrite: false
+  max_underwrite_per_cycle: 1
+
+calendar:
+  enabled: true
+
+leaderboard:
+  enabled: true
+
+honors:
+  enabled: true
+
+meeting:
+  enabled: true
+
+governance:
+  enabled: true
+
+admin:
+  enabled: true

@@ -1,0 +1,119 @@
+﻿# fzsm 炒股 Bot（Go-only）
+
+本项目主路径为 **Go**。
+
+- `bin/fzsm-bot.exe`：主循环 + 交易/模块执行 + cookie 保活
+- `bin/fzsm-dashboard.exe`：监控面板，默认 `http://127.0.0.1:8787/`
+- `bin/fzsm-doctor.exe`：健康检查 / 路由映射
+
+Python `src/` 已移除，不再维护。
+
+## 快速启动
+
+```bat
+start_bot.bat
+```
+
+手动启动：
+
+```bat
+bin\fzsm-bot.exe -c config.yaml -primary -mode live -every 18
+bin\fzsm-dashboard.exe -c config.yaml -host 127.0.0.1 -port 8787 -html web\dashboard.html
+```
+
+停止：
+
+```bat
+stop_bot.bat
+```
+
+状态 / 体检：
+
+```bat
+status_bot.bat
+bin\fzsm-doctor.exe -c config.yaml
+bin\fzsm-doctor.exe --map
+```
+
+## 管理登录（整页门禁）
+
+Dashboard 支持专门登录页：
+
+1. 配置环境变量：
+   ```bat
+   setx FZSM_ADMIN_PASSWORD "你的管理密码"
+   ```
+2. 重启 `fzsm-dashboard.exe`
+3. 打开 `http://127.0.0.1:8787/`
+4. 用户名：`admin`
+5. 输入密码登录后，才能进入监控面板
+
+说明：
+- 未配置密码时，本机默认 `open_local`，可直接进面板（方便开发）
+- 上服务器必须配置 `FZSM_ADMIN_PASSWORD`
+- 兼容：若未设密码，可回退使用 `FZSM_ADMIN_TOKEN` 作为密码
+- 详情见：`docs/COOKIE_MANAGEMENT.md`
+
+## Cookie 管理
+
+业务 cookie 文件：`auth/cookies.json`（通常含 `fz_lottery`）
+
+控制页支持：
+- 状态查看 / 脱敏列表
+- 导入 / 探测 / 清除
+- 导入格式：
+  1. **直接粘贴 cookie 原值**
+  2. `name=value`
+  3. JSON 数组/对象
+
+Bot 与 Dashboard 共用同一 cookie 文件；保活会探测 stocks/lottery 登录态。
+
+## 配置
+
+主要看 `config.yaml`：
+
+- `mode: live|paper`
+- `dashboard.port: 8787`
+- `cookie_file: auth/cookies.json`
+- `auth.keepalive_*`
+- `lottery.*` / `farm.*` / `risk.*` / `regime.*`
+
+## 面板功能
+
+Dashboard 主要包含：
+
+- 总览 / 持仓 / 信号 / 成交
+- 控制：交易模式、资金风格、农场与功能开关
+- 模块 / 资金 / 赚钱 / 信息
+- Cookie 管理与保活状态
+
+状态持久化到 SQLite：`data/bot.db` 的 `runtime_state`。
+
+## 编译
+
+```bat
+go -C go build -o ..\bin\fzsm-bot.exe .\cmd\bot
+go -C go build -o ..\bin\fzsm-dashboard.exe .\cmd\dashboard
+go -C go build -o ..\bin\fzsm-doctor.exe .\cmd\doctor
+go -C go test ./...
+```
+
+## 目录
+
+```text
+bin/                 可执行文件
+go/                  Go 源码
+web/dashboard.html   前端面板
+data/bot.db          状态/成交等
+auth/cookies.json    业务 cookie
+config.yaml          配置
+docs/                文档
+```
+
+## 备注
+
+- 赚钱相关：农场 / 抽奖 / 侧线 / 券商 / VIP 等模块会按开关与接口可用性运行
+- paper 示例：`bin\fzsm-bot.exe -c config.yaml -mode paper --once`
+- primary 实例会写 `runtime_state.service`；同机建议只跑一个 primary
+- 服务器部署安全说明：`docs/COOKIE_MANAGEMENT.md`
+- 启动说明：`docs/STARTUP.md`
