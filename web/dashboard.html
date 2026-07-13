@@ -1187,6 +1187,29 @@
     .risk-edge-msg{margin-top:6px;color:var(--muted);font-size:11px;line-height:1.4}
     @media (max-width:720px){.risk-edge-meta{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
+
+    .risk-edge-filters{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 8px}
+    .risk-edge-filters button{
+      border:1px solid rgba(210,230,255,.16); background:rgba(255,255,255,.04);
+      color:rgba(220,232,255,.9); border-radius:999px; padding:4px 10px; font-size:11px; cursor:pointer
+    }
+    .risk-edge-filters button.on{
+      border-color:rgba(110,168,255,.45); background:rgba(110,168,255,.14); color:#dcecff; font-weight:720
+    }
+    .risk-edge-item{cursor:pointer; transition:border-color .15s ease, background .15s ease}
+    .risk-edge-item:hover{border-color:rgba(126,182,255,.35); background:rgba(255,255,255,.05)}
+    .risk-edge-item .rh .rt-sub{font-size:11px;color:var(--muted);font-weight:600;margin-left:6px}
+    .risk-detail-list{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto;margin-top:8px}
+    .risk-detail-row{display:grid;grid-template-columns:1.1fr .8fr .8fr;gap:8px;padding:7px 8px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(210,230,255,.10);font-size:12px}
+    .risk-detail-row .win{color:var(--good)}
+    .risk-detail-row .lose{color:var(--bad)}
+    .modal.wide{width:min(560px,100%)}
+
+
+    .risk-edge-toggle{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0 8px}
+    .risk-edge-toggle .flag-sw{margin:0}
+    .risk-edge-wrap[hidden]{display:none !important}
+
 </style>
 </head>
 <body class="login-locked">
@@ -1415,8 +1438,26 @@
             <div class="flag-row" id="featureFlagPanel"><span class="note">加载中...</span></div>
             <div class="farm-note" id="sideNote">侧线: IPO/对赌/基金</div>
             <div class="farm-note" style="margin-top:10px">高风险门槛总览（方案B）</div>
-            <div class="risk-edge-panel" id="riskEdgePanel"><span class="note">加载中...</span></div>
-            <div class="farm-note" id="riskEdgeHint">理论/观察 RTP·EV 与最近样本；负期望默认拦截</div>
+            <div class="risk-edge-toggle" id="riskEdgeToggleRow">
+              <label class="flag-sw">
+                <input id="riskEdgeEnabledSw" type="checkbox" onchange="setRiskEdgePanelEnabled(this.checked)">
+                <span>显示门槛总览</span>
+              </label>
+              <label class="flag-sw">
+                <input id="riskEdgeDetailSw" type="checkbox" onchange="setRiskEdgeDetailEnabled(this.checked)">
+                <span>允许点开样本详情</span>
+              </label>
+            </div>
+            <div class="risk-edge-wrap" id="riskEdgeWrap">
+              <div class="risk-edge-filters" id="riskEdgeFilters">
+                <button type="button" data-risk-filter="all" class="on" onclick="setRiskEdgeFilter('all')">全部</button>
+                <button type="button" data-risk-filter="blocked" onclick="setRiskEdgeFilter('blocked')">仅拦截</button>
+                <button type="button" data-risk-filter="ready" onclick="setRiskEdgeFilter('ready')">可自动</button>
+                <button type="button" data-risk-filter="collecting" onclick="setRiskEdgeFilter('collecting')">收集中</button>
+              </div>
+              <div class="risk-edge-panel" id="riskEdgePanel"><span class="note">加载中...</span></div>
+              <div class="farm-note" id="riskEdgeHint">理论/观察 RTP·EV 与最近样本；点击卡片看样本详情</div>
+            </div>
           </div>
           <div class="card">
             <div class="card-head"><h2>服务状态</h2><div class="hint" id="svcHint">-</div></div>
@@ -1541,8 +1582,25 @@
     </div>
   </div>
 
+
+  <div class="modal-mask" id="detailMask" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+    <div class="modal wide">
+      <h3 id="detailTitle">详情</h3>
+      <p id="detailDesc">-</p>
+      <div id="detailBody"></div>
+      <div class="modal-actions">
+        <button id="detailClose" class="primary" type="button">关闭</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 let auto = true, timer = null, currentTab = 'overview', refreshing = false, pendingControl = null, toastTimer = null;
+let riskEdgeFilter = 'all';
+let riskEdgeCache = {};
+let lastRiskEdgesPayload = null;
+let riskEdgePanelEnabled = true;
+let riskEdgeDetailEnabled = true;
 const refreshSec = Number(%%REFRESH_SEC%%);
 const PALETTE = ['#6ea8ff','#3dffb0','#a78bfa','#ffd166','#56e1ff','#ff6bcb','#8b9cff','#7dffa8'];
 const TAB_ORDER=['overview','positions','signals','trades','control','modules','funds','earn','info'];
@@ -3431,11 +3489,16 @@ cards.push(
     return '<div class="risk-edge-hist">'+parts.join('')+'</div>';
   }
   function renderRiskEdges(d){
+    applyRiskEdgePanelVisibility();
+    if(!riskEdgePanelEnabled){
+      lastRiskEdgesPayload = d || lastRiskEdgesPayload || {};
+      return;
+    }
     const box = document.getElementById('riskEdgePanel');
     if(!box) return;
-    const edges = (d && d.risk_edges) || {};
-    // also merge live module analysis edges if overview ones empty
-    const mods = (d && d.modules) || {};
+    lastRiskEdgesPayload = d || lastRiskEdgesPayload || {};
+    const edges = (lastRiskEdgesPayload && lastRiskEdgesPayload.risk_edges) || {};
+    const mods = (lastRiskEdgesPayload && lastRiskEdgesPayload.modules) || {};
     const lot = mods.lottery || {};
     const lotA = lot.analysis || {};
     const der = mods.derivatives || {};
@@ -3450,12 +3513,36 @@ cards.push(
       {id:'derivatives', label:'期货/杠杆', edge: edges.derivatives && Object.keys(edges.derivatives).length? edges.derivatives : (derA.risk_edge||der.risk_edge||{})},
       {id:'underwrite', label:'承销', edge: edges.underwrite && Object.keys(edges.underwrite).length? edges.underwrite : (broA.underwrite_edge||bro.underwrite_edge||{})},
     ];
+    riskEdgeCache = {};
+    items.forEach(it => { riskEdgeCache[it.id] = it; });
+
+    // sync filter buttons
+    const filt = riskEdgeFilter || 'all';
+    document.querySelectorAll('#riskEdgeFilters [data-risk-filter]').forEach(btn => {
+      btn.classList.toggle('on', btn.getAttribute('data-risk-filter') === filt);
+    });
+
     let readyN=0, blockN=0, collectN=0;
-    const html = items.map(it => {
+    const visible = [];
+    items.forEach(it => {
       const e = it.edge || {};
-      const st = riskProbeText(e);
       const cls = riskBadgeClass(e);
       if(cls==='ok') readyN++; else if(cls==='bad') blockN++; else collectN++;
+      const st = riskProbeText(e);
+      let bucket = 'collecting';
+      if(cls==='ok' || st==='可自动') bucket = 'ready';
+      else if(cls==='bad' || st==='拦截') bucket = 'blocked';
+      if(filt==='all' || filt===bucket) visible.push({...it, bucket, cls, st});
+    });
+
+    if(!visible.length){
+      setHtmlIfChanged(box, '<span class="note">当前筛选下无项目</span>');
+      setTextIfChanged('riskEdgeHint', '筛选=' + filt + ' · 可自动 '+readyN+' · 拦截 '+blockN+' · 收集/分析 '+collectN+' · 点击卡片看样本详情');
+      return;
+    }
+
+    const html = visible.map(it => {
+      const e = it.edge || {};
       const samples = e.samples!=null? e.samples : 0;
       const target = e.sample_target!=null? e.sample_target : (e.min_samples!=null?e.min_samples:'-');
       const tRtp = fmtSlotRtp(e.theory_rtp);
@@ -3464,9 +3551,10 @@ cards.push(
       const oEv = Number(samples)>0 ? fmtSlotEv(e.obs_ev!=null?e.obs_ev:e.obs_ev_per_spin) : '-';
       const wr = (Number(samples)>0 && e.win_rate!=null) ? ((Number(e.win_rate)*100).toFixed(1)+'%') : '-';
       const msg = e.message || e.note || '等待 bot 下一轮写入 edge';
-      return '<div class="risk-edge-item">'
-        + '<div class="rh"><div class="rt">'+escapeHtml(it.label)+'</div>'
-        + '<span class="badge '+cls+'">'+escapeHtml(st)+'</span></div>'
+      const histN = Array.isArray(e.history) ? e.history.length : 0;
+      return '<div class="risk-edge-item" data-risk-id="'+escapeHtml(it.id)+'" onclick="showRiskEdgeDetail(\''+String(it.id).replace(/'/g,'')+'\')">'
+        + '<div class="rh"><div class="rt">'+escapeHtml(it.label)+'<span class="rt-sub">点击详情</span></div>'
+        + '<span class="badge '+it.cls+'">'+escapeHtml(it.st)+'</span></div>'
         + '<div class="risk-edge-meta">'
         + '<div><div class="k">理论RTP</div><div class="v">'+escapeHtml(tRtp)+'</div></div>'
         + '<div><div class="k">理论EV</div><div class="v">'+escapeHtml(tEv)+'</div></div>'
@@ -3475,67 +3563,125 @@ cards.push(
         + '<div><div class="k">样本</div><div class="v">'+escapeHtml(String(samples)+'/'+String(target))+'</div></div>'
         + '<div><div class="k">胜率</div><div class="v">'+escapeHtml(wr)+'</div></div>'
         + '<div><div class="k">门槛</div><div class="v">'+escapeHtml(String(e.gate||'-'))+'</div></div>'
-        + '<div><div class="k">最近Δ</div><div class="v">'+escapeHtml(e.last_delta==null?'-':fmtSlotEv(e.last_delta))+'</div></div>'
+        + '<div><div class="k">历史条数</div><div class="v">'+escapeHtml(String(histN))+'</div></div>'
         + '</div>'
         + riskHistoryHtml(e)
         + '<div class="risk-edge-msg">'+escapeHtml(String(msg))+'</div>'
         + '</div>';
     }).join('');
-    setHtmlIfChanged(box, html || '<span class="note">暂无 edge 数据</span>');
-    setTextIfChanged('riskEdgeHint', '可自动 '+readyN+' · 拦截 '+blockN+' · 收集/分析 '+(items.length-readyN-blockN)+' · 样本点为最近盈亏Δ');
+    setHtmlIfChanged(box, html);
+    setTextIfChanged('riskEdgeHint', '筛选=' + filt + ' · 可自动 '+readyN+' · 拦截 '+blockN+' · 收集/分析 '+collectN+' · 点击卡片看样本详情');
   }
-
-function renderAuthKeepalive(d){
-    const el = document.getElementById('authKeepaliveBox');
-    if(!el) return;
-    const ka = d.auth_keepalive || {};
-    if(ka.enabled === false){
-      el.innerHTML = '<span class="note">\u4fdd\u6d3b\u5df2\u5173\u95ed</span>';
-      return;
-    }
-    if(!ka || (!ka.ts && ka.ok==null)){
-      el.innerHTML = '<span class="note">\u6682\u65e0\u4fdd\u6d3b\u8bb0\u5f55\uff08bot \u4e0b\u4e00\u8f6e\u5199\u5165\uff09</span>';
-      return;
-    }
-    const ok = !!ka.ok;
-    const degraded = !!ka.degraded;
-    const stocks = ka.stocks || {};
-    const lottery = ka.lottery || {};
-    const tsTxt = ka.ts ? new Date(Number(ka.ts)*1000).toLocaleString() : '-';
-    let badge = '\u5931\u6548';
-    let cls = 'bad';
-    if(ok && degraded){ badge = '\u90e8\u5206\u6709\u6548'; cls = 'warn'; }
-    else if(ok){ badge = '\u6b63\u5e38'; cls = 'ok'; }
-    let html = '';
-    html += '<span class="earn-chip '+cls+'">\u72b6\u6001 \u00b7 '+badge+'</span>';
-    html += '<span class="earn-chip">\u65f6\u95f4 \u00b7 '+escapeHtml(String(tsTxt))+'</span>';
-    html += '<span class="earn-chip '+(stocks.ok?'ok':'bad')+'">\u80a1\u5e02 \u00b7 '+(stocks.ok?'\u5df2\u767b\u5f55':'\u5931\u6548')+(stocks.latency_ms!=null?(' '+stocks.latency_ms+'ms'):'')+'</span>';
-    if(lottery.skipped){
-      html += '<span class="earn-chip">\u62bd\u5956 \u00b7 \u672a\u63a2\u6d4b</span>';
-    }else{
-      html += '<span class="earn-chip '+(lottery.ok?'ok':'bad')+'">\u62bd\u5956 \u00b7 '+(lottery.ok?'\u5df2\u767b\u5f55':'\u5931\u6548')+(lottery.latency_ms!=null?(' '+lottery.latency_ms+'ms'):'')+'</span>';
-    }
-    if(ka.message){
-      html += '<div class="farm-note" style="margin-top:8px;width:100%">'+escapeHtml(String(ka.message))+'</div>';
-    }
-    if(ka.manual_reauth_hint){
-      const tip = ok ? '\u7eed\u767b\u63d0\u793a\uff1a' : '\u624b\u52a8\u7eed\u767b\uff1a';
-      html += '<div class="farm-note" style="margin-top:4px;width:100%">'+tip+escapeHtml(String(ka.manual_reauth_hint))+'</div>';
-    }
-    if(ka.cookie_write && ka.cookie_write.rewrote){
-      html += '<div class="farm-note" style="margin-top:4px;width:100%">\u5df2\u56de\u5199 cookie '+escapeHtml(String(ka.cookie_write.count||0))+' \u6761</div>';
-    }
-    el.innerHTML = html;
-  }
-
-
-
-
 
   
-  let cookieMgrBusy = false;
-  let adminAuthState = {login_required:false, logged_in:false, auth_mode:'open_local', ready:false};
-  let panelStarted = false;
+  function loadRiskEdgeUiPrefs(){
+    try{
+      const en = localStorage.getItem('fzsm_risk_edge_panel');
+      const de = localStorage.getItem('fzsm_risk_edge_detail');
+      riskEdgePanelEnabled = (en == null) ? true : (en === '1' || en === 'true');
+      riskEdgeDetailEnabled = (de == null) ? true : (de === '1' || de === 'true');
+      const f = localStorage.getItem('fzsm_risk_edge_filter');
+      if(f === 'blocked' || f === 'ready' || f === 'collecting' || f === 'all') riskEdgeFilter = f;
+    }catch(e){}
+    const sw1 = document.getElementById('riskEdgeEnabledSw');
+    const sw2 = document.getElementById('riskEdgeDetailSw');
+    if(sw1) sw1.checked = !!riskEdgePanelEnabled;
+    if(sw2) sw2.checked = !!riskEdgeDetailEnabled;
+    applyRiskEdgePanelVisibility();
+  }
+  function applyRiskEdgePanelVisibility(){
+    const wrap = document.getElementById('riskEdgeWrap');
+    if(wrap) wrap.hidden = !riskEdgePanelEnabled;
+    const hint = document.getElementById('riskEdgeHint');
+    // keep filters inside wrap, so hidden together
+  }
+  function setRiskEdgePanelEnabled(on){
+    riskEdgePanelEnabled = !!on;
+    try{ localStorage.setItem('fzsm_risk_edge_panel', riskEdgePanelEnabled ? '1' : '0'); }catch(e){}
+    applyRiskEdgePanelVisibility();
+    if(riskEdgePanelEnabled){
+      renderRiskEdges(lastRiskEdgesPayload || {});
+    }
+  }
+  function setRiskEdgeDetailEnabled(on){
+    riskEdgeDetailEnabled = !!on;
+    try{ localStorage.setItem('fzsm_risk_edge_detail', riskEdgeDetailEnabled ? '1' : '0'); }catch(e){}
+  }
+
+  function setRiskEdgeFilter(mode){
+    const m = String(mode||'all');
+    riskEdgeFilter = (m==='blocked'||m==='ready'||m==='collecting') ? m : 'all';
+    try{ localStorage.setItem('fzsm_risk_edge_filter', riskEdgeFilter); }catch(e){}
+    renderRiskEdges(lastRiskEdgesPayload || {});
+  }
+
+  function openDetailModal(title, desc, bodyHtml){
+    const mask = document.getElementById('detailMask');
+    if(!mask) return;
+    document.getElementById('detailTitle').textContent = title || '详情';
+    document.getElementById('detailDesc').textContent = desc || '';
+    document.getElementById('detailBody').innerHTML = bodyHtml || '';
+    mask.classList.add('show');
+    setTimeout(()=>{ const b=document.getElementById('detailClose'); if(b) b.focus(); }, 30);
+  }
+  function closeDetailModal(){
+    const mask = document.getElementById('detailMask');
+    if(mask) mask.classList.remove('show');
+  }
+  function showRiskEdgeDetail(id){
+    if(!riskEdgeDetailEnabled){
+      try{ toast('已关闭样本详情，可在控制页开关重新打开','warn','高风险门槛'); }catch(e){}
+      return;
+    }
+    if(!riskEdgePanelEnabled) return;
+    const it = riskEdgeCache[id];
+    if(!it){
+      openDetailModal('高风险详情', '暂无数据', '<div class="note">等待 edge 数据</div>');
+      return;
+    }
+    const e = it.edge || {};
+    const samples = e.samples!=null? e.samples : 0;
+    const target = e.sample_target!=null? e.sample_target : (e.min_samples!=null?e.min_samples:'-');
+    const tRtp = fmtSlotRtp(e.theory_rtp);
+    const tEv = fmtSlotEv(e.theory_ev!=null?e.theory_ev:e.theory_ev_per_spin);
+    const oRtp = Number(samples)>0 ? fmtSlotRtp(e.obs_rtp) : '-';
+    const oEv = Number(samples)>0 ? fmtSlotEv(e.obs_ev!=null?e.obs_ev:e.obs_ev_per_spin) : '-';
+    const wr = (Number(samples)>0 && e.win_rate!=null) ? ((Number(e.win_rate)*100).toFixed(1)+'%') : '-';
+    const st = riskProbeText(e);
+    const hist = Array.isArray(e.history) ? e.history : [];
+    let histHtml = '';
+    if(!hist.length){
+      histHtml = '<div class="note">暂无样本历史。自动执行产生盈亏后会记录最近20条。</div>';
+    } else {
+      histHtml = '<div class="risk-detail-list">' + hist.slice(0,20).map(row => {
+        const d = Number(row && row.delta);
+        const win = !!(row && (row.win===true || d>0));
+        const ts = row && row.ts ? new Date(Number(row.ts)*1000).toLocaleString() : '-';
+        const deltaTxt = Number.isFinite(d) ? ((d>=0?'+':'')+Math.round(d).toLocaleString()) : '-';
+        return '<div class="risk-detail-row">'
+          + '<div>'+escapeHtml(ts)+'</div>'
+          + '<div class="'+(win?'win':'lose')+'">'+escapeHtml(deltaTxt)+'</div>'
+          + '<div>'+(win?'盈利样本':'亏损/非盈')+'</div>'
+          + '</div>';
+      }).join('') + '</div>';
+    }
+    const body = ''
+      + '<div class="risk-edge-meta" style="margin-top:8px">'
+      + '<div><div class="k">状态</div><div class="v">'+escapeHtml(st)+'</div></div>'
+      + '<div><div class="k">门槛</div><div class="v">'+escapeHtml(String(e.gate||'-'))+'</div></div>'
+      + '<div><div class="k">样本</div><div class="v">'+escapeHtml(String(samples)+'/'+String(target))+'</div></div>'
+      + '<div><div class="k">胜率</div><div class="v">'+escapeHtml(wr)+'</div></div>'
+      + '<div><div class="k">理论RTP</div><div class="v">'+escapeHtml(tRtp)+'</div></div>'
+      + '<div><div class="k">理论EV</div><div class="v">'+escapeHtml(tEv)+'</div></div>'
+      + '<div><div class="k">观察RTP</div><div class="v">'+escapeHtml(oRtp)+'</div></div>'
+      + '<div><div class="k">观察EV</div><div class="v">'+escapeHtml(oEv)+'</div></div>'
+      + '</div>'
+      + '<div class="risk-edge-msg" style="margin-top:8px">'+escapeHtml(String(e.message||e.note||'-'))+'</div>'
+      + '<div class="farm-note" style="margin-top:10px">最近样本历史（Δ）</div>'
+      + histHtml;
+    openDetailModal(it.label + ' · 样本详情', '方案B门槛与最近自动样本', body);
+  }
+
 
   function cookieAdminHeaders(){
     return {'Content-Type':'application/json'};
@@ -4164,11 +4310,19 @@ document.addEventListener('keydown', (e)=>{
   if(tag==='input'||tag==='textarea'||e.target?.isContentEditable) return;
   const modalOpen=document.getElementById('modalMask').classList.contains('show');
   if(modalOpen){
-    if(e.key==='Escape'){ e.preventDefault(); closeModal(); }
+    if(e.key==='Escape'){
+      e.preventDefault();
+      try{ closeDetailModal(); }catch(err){}
+      closeModal();
+      return;
+    }
     if(e.key==='Enter'){ e.preventDefault(); confirmModal(); }
     return;
   }
-  if(e.key==='Escape') return;
+  if(e.key==='Escape'){
+    const dm=document.getElementById('detailMask');
+    if(dm && dm.classList.contains('show')){ e.preventDefault(); closeDetailModal(); return; }
+  }
   if(e.key==='r' || e.key==='R'){ e.preventDefault(); refresh(true); return; }
   if(e.key>='1' && e.key<='8'){
     e.preventDefault();
