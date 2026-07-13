@@ -1170,8 +1170,8 @@
     .login-card .login-msg.bad{color:#ff9bb0}
     .login-card .login-msg.ok{color:#8dffc0}
     body.login-locked .shell{visibility:hidden; pointer-events:none}
-    #topLogoutBtn{display:none}
-    body.admin-logged-in #topLogoutBtn{display:inline-flex}
+    #topLogoutBtn{display:none; min-width:88px}
+    body:not(.login-locked) #topLogoutBtn{display:inline-flex}
 </style>
 </head>
 <body class="login-locked">
@@ -1226,7 +1226,7 @@
           <span class="pill" id="controlPill">-</span>
           <span class="pill" id="regimePill">-</span>
         </div>
-        <button type="button" id="topLogoutBtn" onclick="gateLogout()">退出登录</button>
+        <button type="button" id="topLogoutBtn" class="ghost" onclick="gateLogout()" title="退出管理登录">退出登录</button>
         <button class="primary refresh-btn" id="refreshBtn" onclick="refresh(true)" title="R"><span class="spin"></span><span class="label">刷新</span><span class="kbd">R</span></button>
         <button id="autoBtn" onclick="toggleAuto()" title="自动刷新"><span class="label">自动 开</span></button>
       </div>
@@ -1424,6 +1424,7 @@
                 <button type="button" class="primary" id="btnCookieProbe" onclick="probeCookies()">仅探测</button>
                 <button type="button" class="warn" id="btnCookieImport" onclick="importCookies()">导入并探测</button>
                 <button type="button" class="danger" id="btnCookieClear" onclick="clearCookies()">清除</button>
+                <button type="button" id="btnAdminLogout" class="ghost" onclick="gateLogout()">退出登录</button>
               </div>
               <div class="cookie-msg" id="cookieMgrMsg">准备就绪</div>
               <div class="farm-note" id="cookieMgrHint">导入后写入 auth/cookies.json；清除前会自动备份。</div>
@@ -3494,9 +3495,27 @@ async function applyControl(mode){
     try{
       await adminFetch('/api/admin/logout', {method:'POST', body:'{}'});
     }catch(e){}
+    adminAuthState = {
+      login_required: true,
+      logged_in: false,
+      auth_mode: (adminAuthState && adminAuthState.auth_mode) ? adminAuthState.auth_mode : 'login_required',
+      ready: true
+    };
     const pass = document.getElementById('gatePass');
     if(pass) pass.value = '';
-    lockPanel('已退出，请重新登录');
+    panelStarted = false;
+    if(typeof timer !== 'undefined' && timer){ try{ clearInterval(timer); }catch(e){} timer=null; }
+    showLoginGate(true);
+    setGateMsg('已退出登录，请重新登录', 'ok');
+    try{ if(typeof toast==='function') toast('已退出登录', 'ok', '管理登录'); }catch(e){}
+    // re-check server mode: open_local will auto re-enter, password mode stays locked
+    try{
+      const st = await refreshAdminAuth();
+      if(st && !adminAuthState.login_required){
+        setGateMsg('当前为本机开放模式（未配管理密码）', 'ok');
+        enterPanel();
+      }
+    }catch(e){}
   }
   // 兼容旧函数名
   async function adminLogin(){ return gateLogin(); }
