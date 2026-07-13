@@ -382,7 +382,9 @@ func RunFarm(cfg *config.Config, st *storage.Storage, c *client.Client) map[stri
                         errors = append(errors, fmt.Sprintf("harvest#%d: %v", plotNo, err))
                         continue
                 }
-                harvested = append(harvested, map[string]any{"plot_no": plotNo, "raw": raw})
+                delta := asFloat(firstNonNil(asMap(raw)["delta_lobster"], asMap(raw)["reward"], asMap(raw)["yield"], asMap(raw)["amount"], asMap(raw)["lobster"]))
+                recordTraceSample(st, "risk.obs.farm_harvest", "farm_harvest", delta, delta >= 0, map[string]any{"source": "self_exec", "plot_no": plotNo})
+                harvested = append(harvested, map[string]any{"plot_no": plotNo, "raw": raw, "delta": delta})
                 harvestN++
         }
         if harvestN > 0 {
@@ -450,16 +452,18 @@ func RunFarm(cfg *config.Config, st *storage.Storage, c *client.Client) map[stri
                                                                 continue
                                                         }
                                                         // only ready if marked
-                                                        st := strings.ToLower(fmt.Sprint(firstNonNil(pm["status"], pm["state"])))
-                                                        if st != "" && st != "ready" && st != "mature" && st != "harvestable" && asFloat(pm["remain_sec"]) > 0 {
+                                                        plotSt := strings.ToLower(fmt.Sprint(firstNonNil(pm["status"], pm["state"])))
+                                                        if plotSt != "" && plotSt != "ready" && plotSt != "mature" && plotSt != "harvestable" && asFloat(pm["remain_sec"]) > 0 {
                                                                 continue
                                                         }
                                                         raw, err := c.FarmSteal(uid, pno)
-                                                        if err != nil {
-                                                                errors = append(errors, fmt.Sprintf("steal@%d#%d: %v", uid, pno, err))
-                                                                continue
-                                                        }
-                                                        stolen = append(stolen, map[string]any{"user_id": uid, "plot_no": pno, "raw": raw})
+						if err != nil {
+							errors = append(errors, fmt.Sprintf("steal@%d#%d: %v", uid, pno, err))
+							continue
+						}
+						deltaSteal := asFloat(firstNonNil(asMap(raw)["delta_lobster"], asMap(raw)["reward"], asMap(raw)["amount"], asMap(raw)["lobster"]))
+						recordTraceSample(st, "risk.obs.farm_steal", "farm_steal", deltaSteal, deltaSteal > 0, map[string]any{"source": "self_exec", "user_id": uid, "plot_no": pno})
+						stolen = append(stolen, map[string]any{"user_id": uid, "plot_no": pno, "raw": raw, "delta": deltaSteal})
                                                         stealN++
                                                 }
                                         } else {

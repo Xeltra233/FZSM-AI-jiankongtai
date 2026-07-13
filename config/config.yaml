@@ -253,6 +253,9 @@ lottery:
   auto_vip: false
   auto_vip_ready: true
   auto_vip_bet: false
+  auto_vip_spectator: false
+  auto_vip_observe: true
+  vip_bet_multiplier: 1
   auto_borrow_zero_rate: false
   auto_deposit: false
   auto_bankruptcy: false

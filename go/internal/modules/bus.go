@@ -169,10 +169,13 @@ func applyEdgeGate(values map[string]any, edge map[string]any) map[string]any {
 	out["history_enabled"] = edgeHistoryOn(values)
 	g := fmt.Sprint(out["gate"])
 	hard := map[string]bool{
-		"trade_disabled":     true,
-		"vip_gate_not_met":   true,
-		"no_candidates":      true,
-		"need_config":        false,
+		"trade_disabled":       true,
+		"vip_gate_not_met":     true,
+		"vip_no_room":          true,
+		"vip_missing_round":    true,
+		"vip_bet_path_missing": true,
+		"no_candidates":        true,
+		"need_config":          false,
 	}
 	// treat empty offers / missing context as hard via message keywords already encoded as gates above
 	if !edgeGateOn(values) {
@@ -294,7 +297,20 @@ func runSide(st *storage.Storage, c *client.Client) map[string]any {
 		}
 	}
 	if len(ss) == 0 && ipoN+betN+fundN == 0 {
-		return result("side_hustle", "IPO/对赌/基金", "idle", nil, map[string]any{"note": "waiting side runner"}, errors, nil, nil)
+			// traceable market snapshot for predictive features
+	if st != nil {
+		prev := st.GetStateMap("risk.obs.side_hustle")
+		prevN := int(asFloat(prev["ipo_n"]))
+		curN := ipoN + betN + fundN
+		if len(prev) > 0 && curN != prevN {
+			delta := float64(curN - prevN)
+			recordTraceSample(st, "risk.obs.side_hustle", "side_market", delta, delta >= 0, map[string]any{
+				"source": "observe", "ipo_n": ipoN, "bet_n": betN, "fund_n": fundN,
+			})
+		}
+		_ = st.SetState("risk.obs.side_hustle", map[string]any{"ipo_n": ipoN, "bet_n": betN, "fund_n": fundN, "ts": now()})
+	}
+return result("side_hustle", "IPO/对赌/基金", "idle", nil, map[string]any{"note": "waiting side runner"}, errors, nil, nil)
 	}
 	status := "ok"
 	if len(errors) > 0 && ipoN+betN+fundN == 0 {
@@ -326,40 +342,117 @@ func runDerivatives(cfg *config.Config, st *storage.Storage, values map[string]a
 		dcfg = cfg.Derivatives
 	}
 	tradeEnabled := flagOn(values, "derivatives.trade_enabled", asBool(dcfg["trade_enabled"], false))
+
+	// Live path inventory (Task4 probe):
+	// GET /futures 200, GET /margin/positions 200,
+	// POST /margin/open exists (403 cooldown/business), POST /margin/close exists (400 need position id)
+	pathNotes := []string{
+		"GET /futures = contracts snapshot",
+		"GET /margin/positions = open margin positions",
+		"POST /margin/open = open leverage/futures (business 403 possible)",
+		"POST /margin/close = close by valid position id",
+		"GET /futures/list|/contracts|/perp = 404",
+	}
+
 	edge := applyEdgeGate(values, evaluateDerivativesEdge(st, dcfg, ds, tradeEnabled))
+	actions := asSliceMaps(ds["actions"])
+	analysis := asMap(ds["analysis"])
+	if len(analysis) == 0 {
+		analysis = map[string]any{}
+	}
+	analysis["path_notes"] = pathNotes
+	analysis["risk_edge"] = edge
+	analysis["live_paths"] = map[string]any{
+		"futures_get":          true,
+		"margin_positions_get": true,
+		"margin_open_post":     true,
+		"margin_close_post":    true,
+		"note":                 "路径已实战确认；当前模块主要消费本地 plan，执行仍受开关/edge/仓位数量门控",
+	}
+
+	best := asMap(analysis["best"])
+	if len(best) == 0 && len(actions) > 0 {
+		best = asMap(actions[0]["futures"])
+		if len(best) == 0 {
+			best = actions[0]
+		}
+	}
+	shares := asFloat(firstNonNil(ds["shares"], best["shares"]))
+	if shares <= 0 && len(actions) > 0 {
+		shares = asFloat(actions[0]["shares"])
+	}
+	cash := asFloat(firstNonNil(ds["cash"], 0))
+	openMargin := asFloat(firstNonNil(ds["open_margin"], 0))
+	gap := []string{}
+	if !tradeEnabled {
+		gap = append(gap, "实盘开关关闭(derivatives.trade_enabled=false)")
+	}
+	if !asBool(edge["edge_ok"], false) {
+		gap = append(gap, "方案B净边未通过")
+	}
+	if shares <= 0 {
+		gap = append(gap, "计划可开数量=0（常见原因：现金不足/保证金预算不足/风控缩仓）")
+	}
+	if cash <= 0 {
+		gap = append(gap, "现金为0，无法承担保证金")
+	}
+	analysis["executable_gap"] = gap
+	analysis["executable"] = tradeEnabled && asBool(edge["edge_ok"], false) && shares > 0
+
+	status := "ok"
 	if len(ds) == 0 {
-		status := "analyze_only"
+		status = "analyze_only"
 		if tradeEnabled {
 			status = "idle"
 		}
-		return result("derivatives", "derivatives", status, []map[string]any{{
-			"status": status, "action": "plan", "reason": "derivatives_trade_disabled_analyze_only", "edge": edge,
-		}}, map[string]any{"trade_enabled": tradeEnabled, "risk_edge": edge}, nil, nil, map[string]any{
-			"trade_enabled": tradeEnabled, "risk_edge": edge,
+		actions = []map[string]any{{
+			"status": status, "action": "plan", "reason": "derivatives_plan_missing",
+			"detail": "本地无 futures plan；请确认 primary bot 是否写入 derivatives 状态", "edge": edge,
+		}}
+		return result("derivatives", "derivatives", status, actions, map[string]any{
+			"trade_enabled": tradeEnabled, "risk_edge": edge, "path_notes": pathNotes, "executable_gap": gap, "executable": false,
+		}, nil, nil, map[string]any{
+			"trade_enabled": tradeEnabled, "risk_edge": edge, "path_notes": pathNotes,
 		})
 	}
-	status := "ok"
+
 	if !tradeEnabled {
 		status = "analyze_only"
-	}
-	// even if trade enabled, block auto interpretation when edge not ok
-	if tradeEnabled && !asBool(edge["edge_ok"], false) {
+		actions = append([]map[string]any{{
+			"status": "analyze_only", "action": "margin_order", "reason": "derivatives_trade_disabled_analyze_only",
+			"detail": "期货/保证金实盘开关关闭；路径已确认但不下单", "edge": edge, "gap": gap,
+		}}, actions...)
+	} else if !asBool(edge["edge_ok"], false) {
+		status = "analyze_only"
+		actions = append([]map[string]any{{
+			"status": "skip", "action": "margin_order", "reason": "no_proven_edge",
+			"detail": edge["message"], "edge": edge, "gap": gap,
+		}}, actions...)
+	} else if shares <= 0 {
+		status = "analyze_only"
+		actions = append([]map[string]any{{
+			"status": "skip", "action": "margin_order", "reason": "margin_ev_or_shares_insufficient",
+			"detail": "有正EV计划但可开数量为0；" + strings.Join(gap, "；"), "edge": edge, "gap": gap,
+		}}, actions...)
+	} else {
+		// Real POST /margin/open exists, but Go main cycle still lacks full live order assembly.
+		actions = append([]map[string]any{{
+			"status": "skip", "action": "margin_order", "reason": "execution_not_wired_in_go_cycle",
+			"detail": "真实 POST /margin/open 已确认存在，但本轮 Go 主循环尚未接入完整下单字段装配；为避免误下单，仅标注可执行缺口。",
+			"edge":   edge, "gap": gap, "shares": shares,
+		}}, actions...)
 		status = "analyze_only"
 	}
-	actions := asSliceMaps(ds["actions"])
-	if tradeEnabled && !asBool(edge["edge_ok"], false) {
-		actions = append([]map[string]any{{
-			"status": "skip", "action": "margin_order", "reason": "no_proven_edge", "detail": edge["message"], "edge": edge,
-		}}, actions...)
-	} else if !tradeEnabled {
-		actions = append([]map[string]any{{
-			"status": "analyze_only", "action": "margin_order", "reason": "derivatives_trade_disabled_analyze_only", "edge": edge,
-		}}, actions...)
-	}
-	analysis := asMap(ds["analysis"])
-	analysis["risk_edge"] = edge
+
 	return result("derivatives", "derivatives", status, actions, analysis, nil, edge["use_ev"], map[string]any{
-		"trade_enabled": tradeEnabled, "open_margin": ds["open_margin"], "cash": ds["cash"], "risk_edge": edge,
+		"trade_enabled":  tradeEnabled,
+		"open_margin":    openMargin,
+		"cash":           cash,
+		"risk_edge":      edge,
+		"path_notes":     pathNotes,
+		"executable":     analysis["executable"],
+		"executable_gap": gap,
+		"impl":           "go",
 	})
 }
 
@@ -393,7 +486,6 @@ func runBrokers(st *storage.Storage, c *client.Client, values map[string]any) ma
 			candidates = arr
 		}
 		if arr, code, err := c.StocksList("/broker/underwriter/list"); err != nil {
-			// keep soft: endpoint may be empty list only
 			errors = append(errors, "broker/underwriter/list: "+err.Error())
 		} else if code >= 400 {
 			errors = append(errors, fmt.Sprintf("broker/underwriter/list status=%d", code))
@@ -401,6 +493,22 @@ func runBrokers(st *storage.Storage, c *client.Client, values map[string]any) ma
 			underwriters = arr
 		}
 	}
+
+	// Task5 live path inventory
+	pathNotes := []string{
+		"GET /broker/me|list|candidates|underwriter/list = 可读",
+		"POST /broker/like {candidate_id} = 可写（已实战200）",
+		"POST /broker/register = 路径存在（参数非法会400）",
+		"承销写路径 /broker/underwriter/apply|join|accept 与扁平 /underwriter/* = 404",
+		"当前 underwriter/list 常为空，无单可接",
+	}
+	livePaths := map[string]any{
+		"broker_me": true, "broker_list": true, "broker_candidates": true,
+		"underwriter_list": true, "broker_like": true, "broker_register": true,
+		"underwriter_apply": false, "underwriter_join": false, "underwriter_accept": false,
+		"note": "承销列表可读；公开 apply 写路径未找到，不能自动承销下单",
+	}
+
 	top := []map[string]any{}
 	for i, it := range list {
 		if i >= 5 {
@@ -416,37 +524,107 @@ func runBrokers(st *storage.Storage, c *client.Client, values map[string]any) ma
 	}
 	signed := me["signed_broker"]
 	myCa := me["my_candidate"]
+	liked := map[string]bool{}
+	for _, id := range asSlice(me["my_likes"]) {
+		liked[fmt.Sprint(id)] = true
+	}
 	actions := []map[string]any{
 		{"status": "ok", "action": "broker_me_loaded", "signed": signed != nil && fmt.Sprint(signed) != "<nil>" && fmt.Sprint(signed) != "map[]"},
 		{"status": "ok", "action": "broker_list_loaded", "count": len(list)},
 		{"status": "ok", "action": "candidates_loaded", "count": len(candidates)},
 	}
 	if len(underwriters) == 0 {
-		actions = append(actions, map[string]any{"status": "idle", "action": "underwriter_list", "reason": "empty"})
+		actions = append(actions, map[string]any{"status": "idle", "action": "underwriter_list", "reason": "empty", "detail": "承销列表为空，无可接单"})
 	} else {
 		actions = append(actions, map[string]any{"status": "ok", "action": "underwriter_list", "count": len(underwriters)})
 	}
 
-	// Plan-B underwrite edge
+	// optional auto like candidates (low risk, path proven)
+	likedN := 0
+	if flagOn(values, "brokers.auto_like", true) && c != nil {
+		maxLike := 1
+		// config not injected here; keep 1/cycle hard safety
+		for _, it := range candidates {
+			if likedN >= maxLike {
+				break
+			}
+			m := asMap(it)
+			cid := firstNonNil(m["id"], m["candidate_id"], m["user_id"])
+			if cid == nil || liked[fmt.Sprint(cid)] {
+				continue
+			}
+			raw, err := c.StocksBrokerLike(cid)
+			if err != nil {
+				actions = append(actions, map[string]any{"status": "error", "action": "broker_like", "reason": err.Error(), "candidate_id": cid})
+				errors = append(errors, "broker_like: "+err.Error())
+				break
+			}
+			liked[fmt.Sprint(cid)] = true
+			likedN++
+			actions = append(actions, map[string]any{"status": "ok", "action": "broker_like", "candidate_id": cid, "raw": raw})
+			// weak predictive sample: successful social action
+			if st != nil {
+				recordTraceSample(st, "risk.obs.broker_like", "broker_like", 0, true, map[string]any{"source": "self_exec", "candidate_id": cid})
+			}
+		}
+		if likedN == 0 {
+			actions = append(actions, map[string]any{"status": "skip", "action": "broker_like", "reason": "no_new_candidate_to_like"})
+		}
+	} else {
+		actions = append(actions, map[string]any{"status": "analyze_only", "action": "broker_like", "reason": "auto_like_off_or_unavailable"})
+	}
+
+	// Plan-B underwrite edge + explicit no-write-path handling
 	bcfg := map[string]any{}
+	if st != nil {
+		// keep empty bcfg; defaults in evaluateUnderwriteEdge
+	}
 	uwEdge := applyEdgeGate(values, evaluateUnderwriteEdge(st, bcfg, len(underwriters)))
-	stUw := "skip"
-	if asBool(uwEdge["edge_ok"], false) {
-		stUw = "ok"
+	uwEdge["write_path_available"] = false
+	uwEdge["live_paths"] = livePaths
+	if len(underwriters) == 0 {
+		uwEdge["edge_ok"] = false
+		uwEdge["gate"] = "no_candidates"
+		uwEdge["probe_status"] = "blocked"
+		uwEdge["message"] = "承销：列表为空，无候选单"
+	} else {
+		// even if candidates exist, apply path is missing
+		uwEdge["edge_ok"] = false
+		uwEdge["gate"] = "write_path_missing"
+		uwEdge["probe_status"] = "blocked"
+		uwEdge["message"] = "承销：有列表可读，但公开 apply/join 写路径未找到，不能自动承接"
+	}
+	if st != nil {
+		saveRiskEdge(st, "risk.edge.underwrite", uwEdge)
 	}
 	actions = append(actions, map[string]any{
-		"status": stUw, "action": "underwrite_edge", "edge": uwEdge,
+		"status": "skip", "action": "underwrite_edge", "edge": uwEdge,
 		"reason": uwEdge["gate"], "detail": uwEdge["message"],
 	})
-	if flagOn(values, "brokers.auto_underwrite", false) && !asBool(uwEdge["edge_ok"], false) {
+	if flagOn(values, "brokers.auto_underwrite", false) {
 		actions = append(actions, map[string]any{
-			"status": "skip", "action": "underwrite", "reason": "no_proven_edge", "edge": uwEdge,
+			"status": "skip", "action": "underwrite", "reason": "underwrite_write_path_missing",
+			"detail": "开关已开，但 /broker/underwriter/apply|join|accept 实战404；仅分析不执行", "edge": uwEdge,
+			"executable": false, "write_path_available": false,
+		})
+	} else {
+		actions = append(actions, map[string]any{
+			"status": "analyze_only", "action": "underwrite", "reason": "auto_underwrite_default_off",
+			"detail": "自动承销默认关；且公开写路径未找到", "edge": uwEdge, "executable": false,
 		})
 	}
 
 	status := "ok"
 	if len(list) == 0 && len(errors) > 0 && len(me) == 0 {
 		status = "error"
+	}
+	gap := []string{}
+	if len(underwriters) == 0 {
+		gap = append(gap, "承销列表为空")
+	}
+	gap = append(gap, "承销 apply 写路径未找到")
+	if !flagOn(values, "brokers.auto_underwrite", false) {
+		gap = append(gap, "自动承销开关关闭")
 	}
 	analysis := map[string]any{
 		"me":                me,
@@ -457,12 +635,21 @@ func runBrokers(st *storage.Storage, c *client.Client, values map[string]any) ma
 		"top_brokers":       top,
 		"signed_broker":     signed,
 		"my_candidate":      myCa,
-		"source":            "broker/me+list+candidates+underwriter/list",
+		"liked_count":       len(liked),
+		"liked_this_cycle":  likedN,
+		"path_notes":        pathNotes,
+		"live_paths":        livePaths,
+		"executable_gap":    gap,
+		"executable":        false,
+		"source":            "broker/me+list+candidates+underwriter/list+like",
 	}
 	return result("brokers", "券商/选举", status, actions, analysis, errors, map[string]any{
 		"brokers_count":    len(list),
 		"candidates_count": len(candidates),
 		"underwrite_edge":  uwEdge,
+		"path_notes":       pathNotes,
+		"executable":       false,
+		"executable_gap":   gap,
 	}, nil)
 }
 

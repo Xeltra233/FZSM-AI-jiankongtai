@@ -25,8 +25,9 @@ var Specs = []Spec{
 	{"lottery.auto_slot", "lottery", "auto_slot", "老虎机", "lottery", "high", "方案B：理论/样本正EV才自动转"},
 	{"lottery.auto_yolo", "lottery", "auto_yolo", "搏一搏", "lottery", "high", "方案B：默认负期望门槛，正EV才允许"},
 	{"lottery.auto_nailong", "lottery", "auto_nailong", "奶龙机", "lottery", "high", "与老虎机同接口；方案B正EV门槛"},
-	{"lottery.auto_vip", "lottery", "auto_vip", "自动进VIP", "lottery", "high", "余额达门槛才可进房"},
-	{"lottery.auto_vip_bet", "lottery", "auto_vip_bet", "VIP自动下注", "lottery", "high", "方案B：正EV门槛，默认拦截"},
+	{"lottery.auto_vip", "lottery", "auto_vip", "自动进VIP", "lottery", "high", "嵌套join路径已确认；正式入座受余额门槛"},
+	{"lottery.auto_vip_bet", "lottery", "auto_vip_bet", "VIP自动下注", "lottery", "high", "方案B：正EV门槛；嵌套bet路径已确认，需回合且过门槛"},
+	{"lottery.auto_vip_observe", "lottery", "auto_vip_observe", "VIP观战收样", "lottery", "low", "观战/只读观察房间与历史，自动收集样本，不下注"},
 	{"lottery.auto_borrow_zero_rate", "lottery", "auto_borrow_zero_rate", "自动借零息", "lottery", "mid", "仅零息且edge通过；默认扫描不借"},
 	{"lottery.auto_deposit", "lottery", "auto_deposit", "自动存款", "lottery", "mid", "需配置金额，对比机会成本"},
 	{"lottery.auto_bankruptcy", "lottery", "auto_bankruptcy", "自动破产保护", "lottery", "high", "仅 EV 门控场景，默认关"},
@@ -89,7 +90,7 @@ func Defaults(cfg *config.Config) map[string]bool {
 		sec := sectionMap(cfg, sp.Section)
 		def := false
 		switch sp.ID {
-		case "risk.edge_gate_enabled", "risk.edge_history_enabled":
+		case "risk.edge_gate_enabled", "risk.edge_history_enabled", "lottery.auto_vip_observe":
 			def = true
 		case "lottery.auto_checkin", "lottery.auto_draw_free", "lottery.auto_draw_premium_free", "brokers.auto_like":
 			def = true

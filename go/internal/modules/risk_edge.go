@@ -178,8 +178,9 @@ func evaluateYoloEdge(st *storage.Storage, lcfg map[string]any, balance float64)
 	return edge
 }
 
-// VIP bet: no free lunch assumed; require configured positive edge.
-func evaluateVipBetEdge(st *storage.Storage, lcfg map[string]any, vipState map[string]any) map[string]any {
+// VIP bet: no free lunch assumed; require configured positive edge + room/round context.
+// vipCtx is assembled by lottery probe (state/my-room/stats/history). No auto bet here.
+func evaluateVipBetEdge(st *storage.Storage, lcfg map[string]any, vipState map[string]any, vipCtx map[string]any) map[string]any {
 	prev := loadRiskEdge(st, "risk.edge.vip_bet")
 	minRTP := riskNum(lcfg, "vip_bet_min_rtp", 1.0)
 	minEV := riskNum(lcfg, "vip_bet_min_ev", 0)
@@ -187,20 +188,89 @@ func evaluateVipBetEdge(st *storage.Storage, lcfg map[string]any, vipState map[s
 	// default theory negative unless config provides vip_bet_theory_rtp/ev
 	theoryRTP := riskNum(lcfg, "vip_bet_theory_rtp", 0.97)
 	theoryEV := riskNum(lcfg, "vip_bet_theory_ev", -1)
-	canEnter := asBool(vipState["can_enter"], false)
+	if vipCtx == nil {
+		vipCtx = map[string]any{}
+	}
+	if vipState == nil {
+		vipState = asMap(vipCtx["state"])
+	}
+	canEnter := asBool(firstNonNil(vipCtx["can_enter"], vipState["can_enter"]), false)
+	hasRoom := asBool(vipCtx["has_room"], false)
+	hasRound := asBool(vipCtx["has_active_round"], false)
+	publicRooms := int(asFloat(vipCtx["public_room_count"]))
+	minBal := asFloat(firstNonNil(vipCtx["min_balance"], vipState["min_balance"]))
+	bal := asFloat(firstNonNil(vipCtx["balance_lobster"], vipState["balance_lobster"]))
+	roomID := firstNonNil(vipCtx["room_id"], asMap(vipCtx["my_room"])["room_id"])
+	roomStatus := fmt.Sprint(firstNonNil(vipCtx["room_status"], ""))
+	contextLabel := fmt.Sprint(firstNonNil(vipCtx["context_label"], "未探测"))
+
 	edge := buildRiskEdge("vip_bet", true, theoryRTP, theoryEV, minRTP, minEV,
 		int(asFloat(prev["samples"])), asFloat(prev["sum_delta"]), int(asFloat(prev["wins"])),
 		map[string]any{
-			"min_samples": minSamples,
-			"can_enter":   canEnter,
-			"note":        "VIP下注默认负期望门槛；仅当配置/样本证明正EV才自动",
+			"min_samples":        minSamples,
+			"can_enter":          canEnter,
+			"has_room":           hasRoom,
+			"has_active_round":   hasRound,
+			"public_room_count":  publicRooms,
+			"room_id":            roomID,
+			"room_status":        roomStatus,
+			"min_balance":        minBal,
+			"balance_lobster":    bal,
+			"context_label":      contextLabel,
+			"context_summary":    firstNonNil(vipCtx["context_summary"], ""),
+			"bet_path_available": asBool(vipCtx["bet_path_available"], false),
+			"note":               "VIP下注默认负期望门槛；需房间/回合上下文且正EV才考虑自动",
 		},
 	)
-	if !canEnter {
+
+	// Hard prerequisites first (kept even if Plan-B gate later bypasses theory EV).
+	switch {
+	case !asBool(vipCtx["state_ok"], len(vipState) > 0):
 		edge["gate"] = "vip_gate_not_met"
 		edge["probe_status"] = "blocked"
 		edge["edge_ok"] = false
-		edge["message"] = "VIP下注：当前不可进房/门槛未满足"
+		edge["message"] = "VIP下注：状态接口不可用"
+	case !hasRoom && !canEnter:
+		edge["gate"] = "vip_gate_not_met"
+		edge["probe_status"] = "blocked"
+		edge["edge_ok"] = false
+		if minBal > 0 && bal > 0 && bal < minBal {
+			edge["message"] = fmt.Sprintf("VIP下注：无房间 · 余额不足进房（余额%.0f / 门槛%.0f）", bal, minBal)
+		} else if publicRooms > 0 {
+			edge["message"] = fmt.Sprintf("VIP下注：无房间 · 可见公开房%d间但未加入，且当前不可进房", publicRooms)
+		} else {
+			edge["message"] = "VIP下注：无房间 · 当前不可进房"
+		}
+	case !hasRoom && canEnter:
+		edge["gate"] = "vip_no_room"
+		edge["probe_status"] = "blocked"
+		edge["edge_ok"] = false
+		edge["message"] = fmt.Sprintf("VIP下注：可进房但尚未入房（公开房%d · 门槛%.0f）", publicRooms, minBal)
+	case hasRoom && !hasRound:
+		edge["gate"] = "vip_missing_round"
+		edge["probe_status"] = "blocked"
+		edge["edge_ok"] = false
+		if roomStatus != "" && roomStatus != "<nil>" {
+			edge["message"] = fmt.Sprintf("VIP下注：有房间%s · 状态%s · 缺活跃回合（回合接口不可用）", fmt.Sprint(roomID), roomStatus)
+		} else {
+			edge["message"] = fmt.Sprintf("VIP下注：有房间%s · 缺活跃回合（回合接口不可用）", fmt.Sprint(roomID))
+		}
+	case !asBool(vipCtx["bet_path_available"], false):
+		// nested bet path exists; still require room/round/balance prerequisites
+		edge["gate"] = "vip_bet_path_missing"
+		edge["probe_status"] = "blocked"
+		edge["edge_ok"] = false
+		edge["message"] = "VIP下注：写路径已确认，但当前上下文/门槛未满足，不执行"
+	default:
+		// leave theory EV gate from buildRiskEdge
+		if edge["message"] == nil || fmt.Sprint(edge["message"]) == "" {
+			edge["message"] = fmt.Sprintf("VIP下注：%s", contextLabel)
+		}
+	}
+	// always expose human context
+	edge["context_label"] = contextLabel
+	if sum := fmt.Sprint(firstNonNil(vipCtx["context_summary"], "")); sum != "" && sum != "<nil>" {
+		edge["context_summary"] = sum
 	}
 	saveRiskEdge(st, "risk.edge.vip_bet", edge)
 	return edge
@@ -343,5 +413,23 @@ func evaluateUnderwriteEdge(st *storage.Storage, bcfg map[string]any, underwrite
 		edge["message"] = "承销：当前无候选单"
 	}
 	saveRiskEdge(st, "risk.edge.underwrite", edge)
+	return edge
+}
+
+// recordTraceSample is the unified sampler for any traceable predictive stream.
+// key should be namespaced, e.g. risk.edge.yolo / risk.obs.free_draw / risk.obs.farm_harvest.
+func recordTraceSample(st *storage.Storage, key, kind string, delta float64, win bool, extra map[string]any) map[string]any {
+	edge := recordRiskSample(st, key, delta, win)
+	edge["kind"] = kind
+	edge["predictive"] = true
+	if extra != nil {
+		for k, v := range extra {
+			edge[k] = v
+		}
+	}
+	if edge["source"] == nil || fmt.Sprint(edge["source"]) == "" {
+		edge["source"] = "traceable_sample"
+	}
+	saveRiskEdge(st, key, edge)
 	return edge
 }
