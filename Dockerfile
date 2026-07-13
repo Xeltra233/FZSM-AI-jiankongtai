@@ -34,5 +34,5 @@ ENV HOST=0.0.0.0 \
     BOT_EVERY=18 \
     LOG_MAX_AGE_DAYS=7
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD curl -fsS "http://127.0.0.1:${PORT}/api/health" || exit 1
+  CMD curl -fsS "http://127.0.0.1:8787/api/health" || exit 1
 CMD ["/app/scripts/start-server.sh"]

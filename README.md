@@ -212,7 +212,8 @@ docker compose up -d --build
 3. 环境变量：
    - `FZSM_ADMIN_PASSWORD=你的管理密码`
    - `HOST=0.0.0.0`
-   - `PORT=8787`
+   - `PORT=8787`（必须是数字；不要填 `${WEB_PORT}` 这种未展开字符串）
+- 也可设 `WEB_PORT=8787`（脚本会识别）
    - `ENABLE_BOT=1`
    - `BOT_MODE=live`
    - `BOT_EVERY=18`

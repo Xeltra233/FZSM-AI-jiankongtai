@@ -6,11 +6,46 @@ mkdir -p /app/auth /app/data /app/logs /app/config
 
 CFG="${FZSM_CONFIG:-config/config.yaml}"
 HOST="${HOST:-0.0.0.0}"
-PORT="${PORT:-8787}"
 BOT_MODE="${BOT_MODE:-live}"
-BOT_EVERY="${BOT_EVERY:-18}"
 ENABLE_BOT="${ENABLE_BOT:-1}"
 LOG_MAX_AGE_DAYS="${LOG_MAX_AGE_DAYS:-7}"
+
+# Resolve listen port robustly.
+# Zeabur/users may set PORT="${WEB_PORT}" literally, or only set WEB_PORT.
+is_port() {
+  case "${1:-}" in
+    ''|*[!0-9]*) return 1 ;;
+    *)
+      if [ "$1" -ge 1 ] 2>/dev/null && [ "$1" -le 65535 ] 2>/dev/null; then
+        return 0
+      fi
+      return 1
+      ;;
+  esac
+}
+
+RAW_PORT="${PORT:-}"
+RAW_WEB_PORT="${WEB_PORT:-}"
+RAW_FZSM_PORT="${FZSM_PORT:-}"
+PORT="8787"
+for cand in "$RAW_PORT" "$RAW_WEB_PORT" "$RAW_FZSM_PORT" "8787"; do
+  if is_port "$cand"; then
+    PORT="$cand"
+    break
+  fi
+done
+
+RAW_EVERY="${BOT_EVERY:-18}"
+case "$RAW_EVERY" in
+  ''|*[!0-9]*) BOT_EVERY="18" ;;
+  *)
+    if [ "$RAW_EVERY" -ge 1 ] 2>/dev/null; then
+      BOT_EVERY="$RAW_EVERY"
+    else
+      BOT_EVERY="18"
+    fi
+    ;;
+esac
 
 # If user mounted an empty config volume, seed defaults from image.
 seed_config() {
@@ -54,6 +89,9 @@ fi
 
 echo "using config: $CFG"
 ls -la "$CFG" || true
+if [ "$RAW_PORT" != "$PORT" ]; then
+  echo "PORT normalized: raw='${RAW_PORT}' web_port='${RAW_WEB_PORT}' -> ${PORT}"
+fi
 
 if [ "$ENABLE_BOT" = "1" ] || [ "$ENABLE_BOT" = "true" ] || [ "$ENABLE_BOT" = "TRUE" ]; then
   echo "starting fzsm-bot (primary mode=$BOT_MODE every=${BOT_EVERY}s)"
