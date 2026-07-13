@@ -219,6 +219,12 @@ lottery:
   max_free_draws_per_cycle: 10
   max_free_premium_draws_per_cycle: 3
   auto_slot: false
+  # Plan B: slot/nailong auto only when proven edge
+  # theory RTP currently ~74% (negative EV) so auto stays blocked until config edge changes
+  slot_min_samples: 30
+  slot_min_rtp: 1.0
+  slot_min_ev: 0
+  slot_max_spins_per_cycle: 1
   auto_yolo: false
   auto_nailong: false
   auto_vip: false

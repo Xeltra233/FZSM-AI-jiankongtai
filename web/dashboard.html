@@ -2052,8 +2052,8 @@ async function applyControl(mode){
       disabled:'功能未开启',
       forbidden:'无权限',
       unauthorized:'未授权',
-      need_rtp_edge_proof:'默认关：高波动，需RTP优势或手动开关',
-      slot_default_off_need_rtp_or_manual:'默认关：老虎机不自动转，开关在赚钱/控制页',
+      need_rtp_edge_proof:'方案B：需证明RTP/EV优势后才自动转',
+      slot_default_off_need_rtp_or_manual:'老虎机默认关：打开后先分析RTP，无优势不转',
       high_variance_default_off:'高波动玩法默认关闭',
       default_no_auto_borrow:'默认不自动借款',
       compare_vs_farm_spot_ipo_opportunity_cost:'对比农场/现货/IPO机会成本',
@@ -2065,7 +2065,9 @@ async function applyControl(mode){
       negative_or_ineligible:'负EV或不符合条件',
       default_reject_extreme_deposit_unless_forced:'默认拒绝极端保证金，除非强制',
       enabled:'已开启开关',
-      no_proven_rtp_edge_in_config:'开关已开，但配置无已证明的RTP优势，暂不自动转',
+      theory_negative:'?????????????',
+      insufficient_balance_for_slot_bet:'?????????',
+      no_proven_rtp_edge_in_config:'开关已开，但理论/样本未证明正EV，暂不自动转',
       pending:'等待中',
       skip:'跳过',
       slot_spin:'老虎机转动',
@@ -2144,7 +2146,7 @@ async function applyControl(mode){
       return mm ? mm[0].replace(/[,\s]+$/,''): '破产冷却中，暂时无法交易';
     }
     if(r === 'enabled') return '已开启开关';
-    if(r === 'no_proven_rtp_edge_in_config') return '开关已开，但配置无已证明的RTP优势，暂不自动转';
+    if(r === 'no_proven_rtp_edge_in_config') return '开关已开，但理论/样本未证明正EV，暂不自动转';
     if(map[r.toLowerCase()]) return map[r.toLowerCase()];
     if(/^[a-z][a-z0-9_]*(?:=.*)?$/i.test(r) && r.indexOf(' ') < 0){
       const eq = r.indexOf('=');
@@ -2162,8 +2164,8 @@ async function applyControl(mode){
       ['negative_or_ineligible', '负EV或不符合条件'],
       ['no_signed_broker_yet', '尚未签约券商'],
       ['high_variance_default_off', '高波动玩法默认关闭'],
-      ['need_rtp_edge_proof', '默认关：高波动，需RTP优势或手动开关'],
-      ['slot_default_off_need_rtp_or_manual', '默认关：老虎机不自动转，开关在赚钱/控制页'],
+      ['need_rtp_edge_proof', '方案B：需证明RTP/EV优势后才自动转'],
+      ['slot_default_off_need_rtp_or_manual', '老虎机默认关：打开后先分析RTP，无优势不转'],
       ['already_checked_or_disabled', '今日已签到'],
       ['default_no_auto_borrow', '默认不自动借款'],
       ['compare_vs_farm_spot_ipo_opportunity_cost', '对比农场/现货/IPO机会成本'],
