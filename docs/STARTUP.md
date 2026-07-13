@@ -75,7 +75,7 @@ bin\fzsm-doctor.exe --map
 - 详见 `docs/COOKIE_MANAGEMENT.md`
 
 
-## 9. Docker / Zeabur
+## 9. Docker
 请使用仓库根目录：
 - `Dockerfile`
 - `docker-compose.yml`

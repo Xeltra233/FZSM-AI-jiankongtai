@@ -12,7 +12,7 @@ LOG_MAX_AGE_DAYS="${LOG_MAX_AGE_DAYS:-7}"
 HTML_PATH="${FZSM_HTML:-web/dashboard.html}"
 
 # Resolve listen port robustly.
-# Zeabur/users may set PORT="${WEB_PORT}" literally, or only set WEB_PORT.
+# Some hosts may set PORT="${WEB_PORT}" literally, or only set WEB_PORT.
 is_port() {
   case "${1:-}" in
     ''|*[!0-9]*) return 1 ;;
