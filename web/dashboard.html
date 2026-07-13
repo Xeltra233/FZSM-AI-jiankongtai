@@ -3569,6 +3569,7 @@ async function applyControl(mode){
       setCookieMsg(d.message || (ok ? '探测成功' : '探测失败'), ok ? 'ok' : 'bad');
       toast(d.message || (ok?'探测成功':'探测失败'), ok?'ok':'err', 'Cookie 探测');
       await refreshCookieManager({silent:true, force:true});
+      try{ await refresh(true); }catch(e){}
     }catch(e){
       setCookieMsg('探测失败：'+String(e.message||e), 'bad');
       toast(String(e.message||e), 'err', 'Cookie 探测');
@@ -3576,6 +3577,7 @@ async function applyControl(mode){
       cookieMgrBusy = false;
     }
   }
+
   async function importCookies(){
     if(!panelStarted) return;
     if(cookieMgrBusy) return;
@@ -3603,6 +3605,7 @@ async function applyControl(mode){
       setCookieMsg(msg, ok ? 'ok' : 'bad');
       toast(msg, ok?'ok':'err', 'Cookie 导入');
       await refreshCookieManager({silent:true, force:true});
+      try{ await refresh(true); }catch(e){}
     }catch(e){
       setCookieMsg('导入失败：'+String(e.message||e), 'bad');
       toast(String(e.message||e), 'err', 'Cookie 导入');
@@ -3610,7 +3613,8 @@ async function applyControl(mode){
       cookieMgrBusy = false;
     }
   }
-  async function clearCookies(){
+
+async function clearCookies(){
     if(!panelStarted) return;
     if(cookieMgrBusy) return;
     if(!confirm('确认清除 cookie？\n会先自动备份，但 bot 下一轮可能掉登录。')) return;
@@ -3629,6 +3633,7 @@ async function applyControl(mode){
       setCookieMsg(msg, ok ? 'ok' : 'bad');
       toast(msg, ok?'ok':'warn', 'Cookie 清除');
       await refreshCookieManager({silent:true, force:true});
+      try{ await refresh(true); }catch(e){}
     }catch(e){
       setCookieMsg('清除失败：'+String(e.message||e), 'bad');
       toast(String(e.message||e), 'err', 'Cookie 清除');
@@ -3636,6 +3641,7 @@ async function applyControl(mode){
       cookieMgrBusy = false;
     }
   }
+
 
 async function refresh(manual=false){
   if(!panelStarted) return;
@@ -3651,13 +3657,17 @@ async function refresh(manual=false){
     const acc=d.account||{}, idx=d.index||{}, svc=d.service||{};
     const control=(d.control||svc.control||{}).trade_mode||'auto';
     const profile=d.profile||svc.profile||'balanced';
-    const liveOk = !!(svc.status==='running' && d.auth_ok);
+    const kaLive = d.auth_keepalive || {};
+    const authAlive = !!(d.auth_ok || kaLive.ok === true || (kaLive.lottery && kaLive.lottery.ok) || (kaLive.stocks && kaLive.stocks.ok));
+    const liveOk = !!(svc.status==='running' && authAlive);
     let liveReason = '';
     if(!liveOk){
       if(svc.status && svc.status!=='running') liveReason = String(svc.status);
-      else if(!d.auth_ok) liveReason = '未登录';
-      else if(d.auth_keepalive && d.auth_keepalive.ok===false) liveReason = '保活失效';
-      else liveReason = '离线';
+      else if(!authAlive) liveReason = '???';
+      else if(kaLive.ok===false) liveReason = '????';
+      else liveReason = '??';
+    } else if(kaLive.degraded){
+      liveReason = '????';
     }
     setLiveStatus(liveOk, liveReason);
     // only clock; silent auto refresh does not flash extra labels

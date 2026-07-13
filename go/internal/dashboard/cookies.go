@@ -246,6 +246,59 @@ func (s *Server) newCookieClient() (*client.Client, error) {
 	return client.New(apiBase, s.lotteryBase(), s.cookiePath())
 }
 
+func (s *Server) persistAuthKeepaliveFromProbe(probe map[string]any) {
+	if s == nil || s.st == nil || probe == nil {
+		return
+	}
+	stocks, _ := probe["stocks"].(map[string]any)
+	lottery, _ := probe["lottery"].(map[string]any)
+	if stocks == nil {
+		stocks = map[string]any{}
+	}
+	if lottery == nil {
+		lottery = map[string]any{}
+	}
+	stocksOK := asBoolAny(stocks["ok"])
+	lotteryOK := asBoolAny(lottery["ok"])
+	ok := stocksOK || lotteryOK
+	degraded := ok && !(stocksOK && lotteryOK)
+	msg := "cookie 保活正常"
+	if ok && degraded {
+		if stocksOK && !lotteryOK {
+			msg = "cookie 部分有效：股市正常，抽奖探测失败"
+		} else if !stocksOK && lotteryOK {
+			msg = "cookie 部分有效：抽奖正常，股市探测失败"
+		} else {
+			msg = "cookie 部分有效"
+		}
+	}
+	if !ok {
+		msg = "cookie 保活失败，请在面板重新导入 cookie"
+	}
+	state := map[string]any{
+		"enabled":            true,
+		"ok":                 ok,
+		"degraded":           degraded,
+		"ts":                 float64(time.Now().UnixNano()) / 1e9,
+		"message":            msg,
+		"stocks":             stocks,
+		"lottery":            lottery,
+		"source":             "dashboard_probe",
+		"impl":               "go",
+		"auto":               true,
+		"manual_reauth_hint": nil,
+		"alert":              nil,
+	}
+	if !ok {
+		state["manual_reauth_hint"] = "控制 → Cookie 管理：粘贴浏览器 fz_lottery 完整值，点导入并探测"
+		state["alert"] = "auth_keepalive_failed"
+	} else if degraded {
+		state["manual_reauth_hint"] = "可选：重新导入完整 cookie，修复失效侧探测"
+		state["alert"] = "auth_keepalive_degraded"
+	}
+	_ = s.st.SetState("auth_keepalive", state)
+}
+
 func probeCookieAuth(c *client.Client) map[string]any {
 	out := map[string]any{
 		"ts": time.Now().Unix(),
@@ -643,6 +696,7 @@ func (s *Server) handleCookieImport(w http.ResponseWriter, r *http.Request) {
 			resp["message"] = msg + "；探测客户端创建失败"
 		} else {
 			probe := probeCookieAuth(c)
+			s.persistAuthKeepaliveFromProbe(probe)
 			resp["probe"] = probe
 			stocksOK := false
 			lotteryOK := false
@@ -705,6 +759,7 @@ func (s *Server) handleCookieProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	probe := probeCookieAuth(c)
+	s.persistAuthKeepaliveFromProbe(probe)
 	writeJSON(w, 200, map[string]any{
 		"ok":        asBoolAny(probe["ok"]),
 		"path":      path,
