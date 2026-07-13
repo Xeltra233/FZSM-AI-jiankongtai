@@ -1178,9 +1178,9 @@
   <div id="loginGate" aria-live="polite">
     <div class="login-card">
       <h1>FZSM 管理登录</h1>
-      <div class="sub">登录后才能进入监控面板。服务器请配置环境变量 <code>FZSM_ADMIN_PASSWORD</code>。</div>
+      <div class="sub">登录后才能进入监控面板。</div>
       <label for="gateUser">用户名</label>
-      <input id="gateUser" type="text" value="admin" autocomplete="username" />
+      <input id="gateUser" type="text" value="" placeholder="管理用户名" autocomplete="username" />
       <label for="gatePass">密码</label>
       <input id="gatePass" type="password" placeholder="管理密码" autocomplete="current-password" />
       <div class="login-actions">
@@ -3453,8 +3453,12 @@ async function applyControl(mode){
     return false;
   }
   async function gateLogin(){
-    const user = (document.getElementById('gateUser')?.value || 'admin').trim() || 'admin';
+    const user = (document.getElementById('gateUser')?.value || '').trim();
     const pass = (document.getElementById('gatePass')?.value || '');
+    if(!user || !pass){
+      setGateMsg('请输入用户名和密码', 'bad');
+      return;
+    }
     setGateMsg('正在登录…');
     try{
       const r = await adminFetch('/api/admin/login', {

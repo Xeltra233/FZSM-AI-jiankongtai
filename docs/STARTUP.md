@@ -16,7 +16,8 @@ Dashboard: http://127.0.0.1:8787/
 
 ## 3. 管理登录（服务器建议开启）
 ```bat
-setx FZSM_ADMIN_PASSWORD "你的管理密码"
+setx FZSM_ADMIN_USERNAME "admin"
+setx FZSM_ADMIN_PASSWORD "your-password"
 ```
 重启 dashboard 后：
 1. 打开面板会先进入登录页
@@ -41,7 +42,8 @@ setx FZSM_ADMIN_PASSWORD "你的管理密码"
   前端页面已打进镜像，不是数据。挂空卷只会把面板盖掉。
 
 ### 环境变量
-- `FZSM_ADMIN_PASSWORD=你的管理密码`
+- `FZSM_ADMIN_USERNAME=admin`
+- `FZSM_ADMIN_PASSWORD=your-password`
 - `PORT=8787`（必须是数字，不要填 `${WEB_PORT}`）
 
 详细说明见 `README.md` 的「服务器部署：要挂载哪些目录」。
@@ -68,7 +70,8 @@ bin\fzsm-doctor.exe --map
 控制页 → Cookie 管理：
 - 导入 / 探测 / 清除 / 脱敏查看
 - 共用文件：`auth/cookies.json`
-- 服务器部署请设置 `FZSM_ADMIN_PASSWORD`
+- optional `FZSM_ADMIN_USERNAME` (default `admin`)
+- required on server: `FZSM_ADMIN_PASSWORD`
 - 详见 `docs/COOKIE_MANAGEMENT.md`
 
 
@@ -79,7 +82,8 @@ bin\fzsm-doctor.exe --map
 
 启动示例：
 ```bat
-set FZSM_ADMIN_PASSWORD=你的管理密码
+set FZSM_ADMIN_USERNAME=admin
+set FZSM_ADMIN_PASSWORD=your-password
 docker compose up -d --build
 ```
 

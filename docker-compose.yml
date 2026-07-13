@@ -9,6 +9,7 @@ services:
       HOST: "0.0.0.0"
       PORT: "8787"
       FZSM_CONFIG: "config/config.yaml"
+      FZSM_ADMIN_USERNAME: "${FZSM_ADMIN_USERNAME:-admin}"
       FZSM_ADMIN_PASSWORD: "${FZSM_ADMIN_PASSWORD:-changeme}"
       ENABLE_BOT: "${ENABLE_BOT:-1}"
       BOT_MODE: "${BOT_MODE:-live}"

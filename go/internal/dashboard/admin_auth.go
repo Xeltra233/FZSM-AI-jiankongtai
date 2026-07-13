@@ -15,6 +15,7 @@ import (
 )
 
 const (
+	adminUsernameEnv   = "FZSM_ADMIN_USERNAME"
 	adminPasswordEnv   = "FZSM_ADMIN_PASSWORD"
 	adminSessionCookie = "fzsm_admin_session"
 	adminSessionTTL    = 12 * time.Hour
@@ -35,6 +36,26 @@ func adminPassword() string {
 	}
 	// 兼容旧环境：没有独立密码时，复用 FZSM_ADMIN_TOKEN 作为管理密码
 	return strings.TrimSpace(os.Getenv(adminTokenEnv))
+}
+
+func adminUsername() string {
+	u := strings.TrimSpace(os.Getenv(adminUsernameEnv))
+	if u == "" {
+		return "admin"
+	}
+	return u
+}
+
+func usernameOK(got string) bool {
+	want := adminUsername()
+	got = strings.TrimSpace(got)
+	if got == "" || want == "" {
+		return false
+	}
+	// constant-time compare via hash to avoid short-circuit length leaks
+	wh := sha256.Sum256([]byte(want))
+	gh := sha256.Sum256([]byte(got))
+	return subtle.ConstantTimeCompare(wh[:], gh[:]) == 1
 }
 
 func adminAuthRequired() bool {
@@ -209,7 +230,7 @@ func (s *Server) handleAdminAuthStatus(w http.ResponseWriter, r *http.Request) {
 		"auth_mode":        adminAuthMode(),
 		"login_required":   required,
 		"logged_in":        loggedIn,
-		"username":         "admin",
+		"username":         adminUsername(),
 		"admin_configured": required,
 		"message":          msg,
 	})
@@ -230,10 +251,10 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 	var payload map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&payload)
 	user := strings.TrimSpace(fmt.Sprint(payload["username"]))
-	if user == "" || user == "<nil>" {
-		user = "admin"
+	if user == "<nil>" {
+		user = ""
 	}
-	if user != "admin" {
+	if !usernameOK(user) {
 		writeJSON(w, 401, map[string]any{"ok": false, "error": "用户名或密码错误", "message": "用户名或密码错误"})
 		return
 	}
@@ -255,7 +276,7 @@ func (s *Server) handleAdminLogin(w http.ResponseWriter, r *http.Request) {
 		"ok":         true,
 		"logged_in":  true,
 		"auth_mode":  adminAuthMode(),
-		"username":   "admin",
+		"username":   adminUsername(),
 		"expires_at": exp.Unix(),
 		"message":    "登录成功",
 	})
@@ -270,7 +291,6 @@ func (s *Server) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
 	clearSessionCookie(w)
 	writeJSON(w, 200, map[string]any{"ok": true, "logged_in": false, "message": "已退出登录"})
 }
-
 
 // withAdminAPIGate 保护面板 API：未登录不可访问 overview/control/feature-flags/cookie 管理
 func (s *Server) withAdminAPIGate(next http.Handler) http.Handler {

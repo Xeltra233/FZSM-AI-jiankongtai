@@ -10,12 +10,14 @@
 
 ## 登录系统（方案 B）
 ### 环境变量
-- 推荐：`FZSM_ADMIN_PASSWORD`
-- 兼容：未设密码时，可回退 `FZSM_ADMIN_TOKEN` 作为密码
+- optional `FZSM_ADMIN_USERNAME` (default `admin`)
+- required on server: `FZSM_ADMIN_PASSWORD`
+- fallback: `FZSM_ADMIN_TOKEN` as password if password unset
 
 Windows：
 ```bat
-setx FZSM_ADMIN_PASSWORD "你的管理密码"
+setx FZSM_ADMIN_USERNAME "admin"
+setx FZSM_ADMIN_PASSWORD "your-password"
 ```
 然后重启 dashboard。
 

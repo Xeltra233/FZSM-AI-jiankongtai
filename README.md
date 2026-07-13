@@ -41,7 +41,8 @@ Dashboard 支持专门登录页：
 
 1. 配置环境变量：
    ```bat
-   setx FZSM_ADMIN_PASSWORD "你的管理密码"
+   setx FZSM_ADMIN_USERNAME "admin"
+   setx FZSM_ADMIN_PASSWORD "your-password"
    ```
 2. 重启 `fzsm-dashboard.exe`
 3. 打开 `http://127.0.0.1:8787/`
@@ -50,8 +51,9 @@ Dashboard 支持专门登录页：
 
 说明：
 - 未配置密码时，本机默认 `open_local`，可直接进面板（方便开发）
-- 上服务器必须配置 `FZSM_ADMIN_PASSWORD`
-- 兼容：若未设密码，可回退使用 `FZSM_ADMIN_TOKEN` 作为密码
+- optional `FZSM_ADMIN_USERNAME` (default `admin`)
+- required on server: `FZSM_ADMIN_PASSWORD`
+- fallback: `FZSM_ADMIN_TOKEN` as password if password unset
 - 详情见：`docs/COOKIE_MANAGEMENT.md`
 
 ## Cookie 管理
@@ -104,7 +106,8 @@ services:
     ports:
       - "8787:8787"
     environment:
-      FZSM_ADMIN_PASSWORD: "你的管理密码"
+      FZSM_ADMIN_USERNAME: "admin"
+      FZSM_ADMIN_PASSWORD: "your-password"
     volumes:
       - ./auth:/app/auth
       - ./data:/app/data
@@ -185,7 +188,8 @@ docs/                文档
 
 ### 本地 / 服务器 Docker Compose
 ```bat
-set FZSM_ADMIN_PASSWORD=你的管理密码
+set FZSM_ADMIN_USERNAME=admin
+set FZSM_ADMIN_PASSWORD=your-password
 docker compose up -d --build
 ```
 打开：`http://服务器IP:8787/`  
@@ -207,7 +211,8 @@ docker compose up -d --build
 1. **构建方式：Dockerfile**（不要选 Node）
 2. 端口：`8787`
 3. 环境变量：
-   - `FZSM_ADMIN_PASSWORD=你的管理密码`
+   - `FZSM_ADMIN_USERNAME=admin`
+   - `FZSM_ADMIN_PASSWORD=your-password`
    - `HOST=0.0.0.0`
    - `PORT=8787`（必须是数字；不要填 `${WEB_PORT}` 这种未展开字符串）
 - 也可设 `WEB_PORT=8787`（脚本会识别）
