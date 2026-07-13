@@ -177,7 +177,7 @@ docs/                文档
 
 
 
-## Docker 部署（推荐，Zeabur 也用这个）
+## Docker 部署
 
 本项目是 **Go Docker 服务**，不是 Node。
 
