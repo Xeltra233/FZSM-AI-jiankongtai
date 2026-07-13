@@ -38,8 +38,6 @@ func adminToken() string {
 	return strings.TrimSpace(os.Getenv(adminTokenEnv))
 }
 
-
-
 func maskCookieValue(v string) string {
 	v = strings.TrimSpace(v)
 	if v == "" {
@@ -326,7 +324,6 @@ func firstNonEmptyAny(xs ...any) any {
 	return nil
 }
 
-
 func decodeCookieImportBody(r *http.Request) (any, error) {
 	defer r.Body.Close()
 	limited := io.LimitReader(r.Body, maxCookieBodySize+1)
@@ -364,55 +361,66 @@ func decodeCookieImportBody(r *http.Request) (any, error) {
 	return parseFlexibleCookieInput(s)
 }
 
-// parseFlexibleCookieInput 支持：
-// 1) JSON 数组/对象
-// 2) name=value; 其他cookie=...
-// 3) 直接粘贴单个 cookie value（默认 name=fz_lottery）
+// parseFlexibleCookieInput supports:
+// 1) JSON array/object
+// 2) name=value; other=...
+// 3) multi-line name=value
+// 4) bare cookie value (default name=fz_lottery)
 func parseFlexibleCookieInput(s string) (any, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return nil, fmt.Errorf("内容为空")
+		return nil, fmt.Errorf("content empty")
 	}
 	// JSON first
 	var raw any
 	if err := json.Unmarshal([]byte(s), &raw); err == nil {
 		return raw, nil
 	}
-	// cookie header style: a=b; c=d
-	if strings.Contains(s, "=") && !strings.HasPrefix(s, "{") && !strings.HasPrefix(s, "[") {
-		parts := strings.Split(s, ";")
-		items := make([]any, 0, len(parts))
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
+
+	if !strings.HasPrefix(s, "{") && !strings.HasPrefix(s, "[") {
+		tmp := strings.ReplaceAll(s, "\r\n", "\n")
+		tmp = strings.ReplaceAll(tmp, "\r", "\n")
+		tmp = strings.ReplaceAll(tmp, ";", "\n")
+		lines := strings.Split(tmp, "\n")
+		items := make([]any, 0, len(lines))
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
 				continue
 			}
-			name, val, ok := strings.Cut(p, "=")
-			name = strings.TrimSpace(name)
-			val = strings.TrimSpace(val)
-			if !ok || name == "" || val == "" {
+			if strings.Contains(line, "=") {
+				name, val, ok := strings.Cut(line, "=")
+				name = strings.TrimSpace(name)
+				val = strings.TrimSpace(val)
+				if !ok || name == "" || val == "" {
+					continue
+				}
+				ln := strings.ToLower(name)
+				if ln == "path" || ln == "domain" || ln == "expires" || ln == "max-age" || ln == "secure" || ln == "httponly" || ln == "samesite" {
+					continue
+				}
+				items = append(items, map[string]any{
+					"name": name, "value": val, "domain": "fanzisima.xyz", "path": "/",
+				})
 				continue
 			}
-			// skip attributes
-			ln := strings.ToLower(name)
-			if ln == "path" || ln == "domain" || ln == "expires" || ln == "max-age" || ln == "secure" || ln == "httponly" || ln == "samesite" {
-				continue
+			if looksLikeCookieValue(line) {
+				items = append(items, map[string]any{
+					"name": "fz_lottery", "value": line, "domain": "fanzisima.xyz", "path": "/",
+				})
 			}
-			items = append(items, map[string]any{
-				"name": name, "value": val, "domain": "fanzisima.xyz", "path": "/",
-			})
 		}
 		if len(items) > 0 {
 			return items, nil
 		}
 	}
-	// bare token/value only
+
 	if looksLikeCookieValue(s) {
 		return []any{map[string]any{
 			"name": "fz_lottery", "value": s, "domain": "fanzisima.xyz", "path": "/",
 		}}, nil
 	}
-	return nil, fmt.Errorf("无法识别内容：请粘贴 JSON、name=value，或直接粘贴 cookie 原值")
+	return nil, fmt.Errorf("unrecognized cookie input: use JSON, name=value (multiline ok), or bare value")
 }
 
 func looksLikeCookieValue(s string) bool {
@@ -433,7 +441,6 @@ func looksLikeCookieValue(s string) bool {
 	}
 	return true
 }
-
 
 func (s *Server) handleCookieStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -531,6 +538,43 @@ func (s *Server) handleCookieExport(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func cookieKey(it client.CookieItem) string {
+	d := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(it.Domain)), ".")
+	if d == "" {
+		d = "fanzisima.xyz"
+	}
+	p := strings.TrimSpace(it.Path)
+	if p == "" {
+		p = "/"
+	}
+	return strings.ToLower(strings.TrimSpace(it.Name)) + "|" + d + "|" + p
+}
+
+// mergeCookieItems: existing + incoming, same name/domain/path is overwritten by incoming.
+func mergeCookieItems(existing, incoming []client.CookieItem) []client.CookieItem {
+	order := make([]string, 0, len(existing)+len(incoming))
+	m := map[string]client.CookieItem{}
+	for _, it := range existing {
+		k := cookieKey(it)
+		if _, ok := m[k]; !ok {
+			order = append(order, k)
+		}
+		m[k] = it
+	}
+	for _, it := range incoming {
+		k := cookieKey(it)
+		if _, ok := m[k]; !ok {
+			order = append(order, k)
+		}
+		m[k] = it
+	}
+	out := make([]client.CookieItem, 0, len(order))
+	for _, k := range order {
+		out = append(out, m[k])
+	}
+	return out
+}
+
 func (s *Server) handleCookieImport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, 405, map[string]any{"ok": false, "error": "方法不允许"})
@@ -544,7 +588,7 @@ func (s *Server) handleCookieImport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]any{"ok": false, "error": err.Error(), "message": "导入内容无效"})
 		return
 	}
-	items, err := parseCookieItems(raw)
+	incoming, err := parseCookieItems(raw)
 	if err != nil {
 		writeJSON(w, 400, map[string]any{"ok": false, "error": err.Error(), "message": "导入校验失败"})
 		return
@@ -553,6 +597,25 @@ func (s *Server) handleCookieImport(w http.ResponseWriter, r *http.Request) {
 	backup, berr := backupCookieFile(path)
 	if berr != nil {
 		writeJSON(w, 500, map[string]any{"ok": false, "error": berr.Error(), "message": "备份失败，已中止导入"})
+		return
+	}
+
+	// default: merge. replace=1/true overwrites whole file.
+	replace := false
+	if q := strings.TrimSpace(r.URL.Query().Get("replace")); q == "1" || strings.EqualFold(q, "true") {
+		replace = true
+	}
+	// also allow body flag via raw map already parsed? keep query only for simplicity
+	items := incoming
+	mode := "merge"
+	if replace {
+		mode = "replace"
+	} else {
+		existing, _, _ := readCookieFile(path)
+		items = mergeCookieItems(existing, incoming)
+	}
+	if len(items) > maxCookieItems {
+		writeJSON(w, 400, map[string]any{"ok": false, "error": fmt.Sprintf("合并后 cookie 条数过多（最多 %d）", maxCookieItems), "message": "导入失败"})
 		return
 	}
 	if err := writeCookieFile(path, items); err != nil {
@@ -564,11 +627,13 @@ func (s *Server) handleCookieImport(w http.ResponseWriter, r *http.Request) {
 	if q := strings.TrimSpace(r.URL.Query().Get("probe")); q == "0" || strings.EqualFold(q, "false") {
 		doProbe = false
 	}
-	msg := fmt.Sprintf("已导入 %d 条 cookie", len(items))
+	msg := fmt.Sprintf("已%s导入 %d 条（当前共 %d 条）", map[string]string{"merge": "合并", "replace": "覆盖"}[mode], len(incoming), len(items))
 	resp := map[string]any{
 		"ok":        true,
 		"path":      path,
 		"count":     len(items),
+		"imported":  len(incoming),
+		"mode":      mode,
 		"backup":    backup,
 		"cookies":   maskedCookieList(items),
 		"auth_mode": adminAuthMode(),
@@ -578,14 +643,33 @@ func (s *Server) handleCookieImport(w http.ResponseWriter, r *http.Request) {
 		c, err := s.newCookieClient()
 		if err != nil {
 			resp["probe"] = map[string]any{"ok": false, "error": err.Error()}
-			resp["message"] = msg + "；探测客户端创建失败"
+			resp["message"] = msg + "??????????"
 		} else {
 			probe := probeCookieAuth(c)
 			resp["probe"] = probe
-			if !asBoolAny(probe["ok"]) {
-				resp["message"] = msg + "；探测未完全通过"
+			stocksOK := false
+			lotteryOK := false
+			if m, ok := probe["stocks"].(map[string]any); ok {
+				stocksOK = asBoolAny(m["ok"])
+			}
+			if m, ok := probe["lottery"].(map[string]any); ok {
+				lotteryOK = asBoolAny(m["ok"])
+			}
+			if asBoolAny(probe["ok"]) {
+				resp["message"] = msg + "????????+???"
+			} else if stocksOK || lotteryOK {
+				side := "??"
+				if lotteryOK && !stocksOK {
+					side = "??"
+				} else if stocksOK && !lotteryOK {
+					side = "??"
+				} else {
+					side = "??"
+				}
+				resp["message"] = msg + "??????" + side + "????????????????????"
+				resp["partial"] = true
 			} else {
-				resp["message"] = msg + "；探测通过"
+				resp["message"] = msg + "??????????????? fz_lottery ??"
 			}
 		}
 	}
