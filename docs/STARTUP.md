@@ -25,17 +25,34 @@ setx FZSM_ADMIN_PASSWORD "你的管理密码"
 
 本机不设密码时默认开放，方便调试。
 
-## 4. 体检
+## 4. 服务器挂载（重要）
+服务器 / Docker 不要纠结“挂哪个盘符”，挂这些路径：
+
+### 必挂
+- `./auth` → `/app/auth`
+- `./data` → `/app/data`
+- `./config.yaml` → `/app/config.yaml`
+
+### 建议挂
+- `./logs` → `/app/logs`
+- `./web` → `/app/web`
+
+### 环境变量
+- `FZSM_ADMIN_PASSWORD=你的管理密码`
+
+详细说明见 `README.md` 的「服务器部署：要挂载哪些目录」。
+
+## 5. 体检
 ```bat
 bin\fzsm-doctor.exe -c config.yaml
 ```
 
-## 5. 停止
+## 6. 停止
 ```bat
 stop_bot.bat
 ```
 
-## 6. 常用命令
+## 7. 常用命令
 ```bat
 bin\fzsm-bot.exe -c config.yaml -primary -mode live -every 18
 bin\fzsm-dashboard.exe -c config.yaml -port 8787
@@ -43,7 +60,7 @@ bin\fzsm-bot.exe -c config.yaml --once -mode paper
 bin\fzsm-doctor.exe --map
 ```
 
-## 7. Cookie 管理入口
+## 8. Cookie 管理入口
 控制页 → Cookie 管理：
 - 导入 / 探测 / 清除 / 脱敏查看
 - 共用文件：`auth/cookies.json`

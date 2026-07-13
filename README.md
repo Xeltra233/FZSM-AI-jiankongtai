@@ -68,6 +68,70 @@ Dashboard 支持专门登录页：
 
 Bot 与 Dashboard 共用同一 cookie 文件；保活会探测 stocks/lottery 登录态。
 
+## 服务器部署：要挂载哪些目录
+
+服务器 / Docker / 面板部署时，**不是挂系统盘符**，而是挂项目持久化目录。
+
+### 必挂（持久化）
+
+| 宿主机路径 | 容器/服务内路径 | 作用 |
+|---|---|---|
+| `./auth` | `/app/auth` | 业务 cookie（`cookies.json`） |
+| `./data` | `/app/data` | SQLite 状态库（`bot.db`）与服务状态 |
+| `./config.yaml` | `/app/config.yaml` | 运行配置 |
+
+### 建议挂
+
+| 宿主机路径 | 容器/服务内路径 | 作用 |
+|---|---|---|
+| `./logs` | `/app/logs` | 运行日志 |
+| `./web` | `/app/web` | 前端面板页面 |
+
+### 不建议挂 / 不要提交
+
+- `auth/cookies.json` 内容（密钥材料，勿进 git）
+- `auth/cookies.backup.*.json`
+- `data/*.db`
+- `logs/`
+- 管理密码明文
+
+### Docker 示例
+
+```yaml
+services:
+  fzsm:
+    image: your-image
+    working_dir: /app
+    ports:
+      - "8787:8787"
+    environment:
+      FZSM_ADMIN_PASSWORD: "你的管理密码"
+    volumes:
+      - ./auth:/app/auth
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config.yaml:/app/config.yaml
+      - ./web:/app/web
+```
+
+### 服务器启动前检查
+
+1. 已挂载 `auth`、`data`、`config.yaml`
+2. 已设置 `FZSM_ADMIN_PASSWORD`
+3. `auth/cookies.json` 已放入有效业务 cookie（或登录面板后导入）
+4. 端口 `8787` 已放行（或走反代）
+5. Dashboard 不要裸奔公网，建议内网 / TLS 反代
+
+### 一句话
+
+服务器挂载重点只有三样：
+
+1. `auth`（登录 cookie）
+2. `data`（状态数据库）
+3. `config.yaml`（配置）
+
+再加 `logs`、`web` 更稳。
+
 ## 配置
 
 主要看 `config.yaml`：
