@@ -43,6 +43,8 @@ func New(mode string, c *client.Client, rm *risk.Manager, st *storage.Storage, p
                         rm.Peaks[id] = asF(v)
                 }
         }
+        // Cooldowns must persist across loop cycles: loop.Once creates a new risk.Manager each cycle.
+        rm.LoadCooldowns(st.GetStateMap("trade_cooldowns"))
         if mode == "paper" {
                 t.Paper = loadPaper(st, paperCash)
         }
@@ -198,6 +200,29 @@ func (t *Trader) persistPeaks() {
                 payload[fmt.Sprint(k)] = v
         }
         _ = t.Storage.SetState("price_peaks", payload)
+}
+
+func (t *Trader) persistCooldowns() {
+        if t == nil || t.Risk == nil || t.Storage == nil {
+                return
+        }
+        _ = t.Storage.SetState("trade_cooldowns", t.Risk.ExportCooldowns())
+}
+
+func (t *Trader) markTradeCD(stockID int) {
+        if t == nil || t.Risk == nil {
+                return
+        }
+        t.Risk.MarkTrade(stockID)
+        t.persistCooldowns()
+}
+
+func (t *Trader) markReduceCD(stockID int) {
+        if t == nil || t.Risk == nil {
+                return
+        }
+        t.Risk.MarkReduce(stockID)
+        t.persistCooldowns()
 }
 
 func (t *Trader) AccountSnapshot(prices map[int]float64) map[string]any {
@@ -361,7 +386,7 @@ func (t *Trader) executePaper(sig strategy.Signal, prices map[int]float64, trade
                 stop, why := t.Risk.ShouldStop(*pos, sig.Price, peak)
                 if stop && tradeMode != "paused" {
                         tr := t.Paper.sell(sig, 0, why)
-                        t.Risk.MarkTrade(sig.StockID)
+                        t.markTradeCD(sig.StockID)
                         t.Risk.ClearPeak(sig.StockID)
                         t.persistPeaks()
                         return []map[string]any{tr}
@@ -373,7 +398,7 @@ func (t *Trader) executePaper(sig strategy.Signal, prices map[int]float64, trade
                                 qty := math.Max(math.Floor(pos.Shares*frac), 1)
                                 if qty > 0 && qty < pos.Shares {
                                                         tr := t.Paper.sell(sig, qty, fmt.Sprintf("风控减仓%.0f%%", frac*100))
-                                        t.Risk.MarkReduce(sig.StockID)
+                                        t.markReduceCD(sig.StockID)
                                         t.persistPeaks()
                                         return []map[string]any{tr}
                                 }
@@ -405,7 +430,7 @@ func (t *Trader) executePaper(sig strategy.Signal, prices map[int]float64, trade
                 }
                 tr := t.Paper.buy(sig, d.Shares, sig.Reason+" | "+d.Reason)
                 t.Risk.UpdatePeak(sig.StockID, sig.Price, 0)
-                t.Risk.MarkTrade(sig.StockID)
+                t.markTradeCD(sig.StockID)
                 t.EntriesThisCycle++
                 t.persistPeaks()
                 return []map[string]any{tr}
@@ -416,7 +441,7 @@ func (t *Trader) executePaper(sig strategy.Signal, prices map[int]float64, trade
                         return []map[string]any{{"status": "skip", "reason": why, "stock_id": sig.StockID, "code": sig.Code}}
                 }
                 tr := t.Paper.sell(sig, qty, why)
-                t.Risk.MarkTrade(sig.StockID)
+                t.markTradeCD(sig.StockID)
                 if qty <= 0 || qty >= pos.Shares {
                         t.Risk.ClearPeak(sig.StockID)
                 }
@@ -484,7 +509,7 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                                 }
                                 t.throttle()
                                 tr := t.liveSell(sig, sellShares, why)
-                                t.markTradeTS(); t.Risk.MarkTrade(sig.StockID)
+                                t.markTradeTS(); t.markTradeCD(sig.StockID)
                                 if sellShares >= int(held) {
                                         t.Risk.ClearPeak(sig.StockID)
                                 }
@@ -509,7 +534,7 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                                                 if qty > 0 {
                                                         t.throttle()
                                                         tr := t.liveSell(sig, qty, fmt.Sprintf("风控减仓%.0f%%", frac*100))
-                                                        t.markTradeTS(); t.Risk.MarkReduce(sig.StockID)
+                                                        t.markTradeTS(); t.markReduceCD(sig.StockID)
                                                         return []map[string]any{tr}
                                                 }
                                         }
@@ -557,7 +582,7 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                 t.throttle()
                 tr := t.liveBuy(sig, int(d.Shares), sig.Reason+" | "+d.Reason)
                 t.Risk.UpdatePeak(sig.StockID, sig.Price, 0)
-                t.persistPeaks(); t.markTradeTS(); t.Risk.MarkTrade(sig.StockID)
+                t.persistPeaks(); t.markTradeTS(); t.markTradeCD(sig.StockID)
                 t.EntriesThisCycle++
                 return []map[string]any{tr}
         }
@@ -580,7 +605,7 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                 }
                 t.throttle()
                 tr := t.liveSell(sig, sellShares, why)
-                t.markTradeTS(); t.Risk.MarkTrade(sig.StockID)
+                t.markTradeTS(); t.markTradeCD(sig.StockID)
                 if sellShares >= int(held) {
                         t.Risk.ClearPeak(sig.StockID)
                 }

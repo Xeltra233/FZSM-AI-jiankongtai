@@ -106,6 +106,37 @@ func (m *Manager) MarkReduce(stockID int) {
 func (m *Manager) InCooldown(stockID int) bool {
         return float64(time.Now().Unix()) < m.Cooldowns[stockID]
 }
+
+// LoadCooldowns restores absolute until-unix map from storage.
+func (m *Manager) LoadCooldowns(raw map[string]any) {
+        if m.Cooldowns == nil {
+                m.Cooldowns = map[int]float64{}
+        }
+        now := float64(time.Now().Unix())
+        for k, v := range raw {
+                var id int
+                fmt.Sscanf(k, "%d", &id)
+                if id <= 0 {
+                        continue
+                }
+                until := asF(v)
+                if until > now {
+                        m.Cooldowns[id] = until
+                }
+        }
+}
+
+// ExportCooldowns returns active until-unix map for persistence.
+func (m *Manager) ExportCooldowns() map[string]any {
+        out := map[string]any{}
+        now := float64(time.Now().Unix())
+        for id, until := range m.Cooldowns {
+                if until > now && id > 0 {
+                        out[fmt.Sprint(id)] = until
+                }
+        }
+        return out
+}
 func (m *Manager) UpdatePeak(stockID int, price, seed float64) float64 {
         cur, ok := m.Peaks[stockID]
         if !ok {
