@@ -120,6 +120,8 @@ risk:
     90: 0.06
     180: 0.02
   cooldown_sec: 90
+  # partial reduce cooldown (risk_off 35% etc), avoid chain-selling every cycle
+  reduce_cooldown_sec: 300
   min_shares: 1
   max_shares_per_order: 5000000
   paper_cash: 1000000

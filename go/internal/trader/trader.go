@@ -1,11 +1,9 @@
 package trader
-
 import (
         "fmt"
         "math"
         "strings"
         "time"
-
         "fzsmbot/internal/client"
         "fzsmbot/internal/risk"
         "fzsmbot/internal/storage"
@@ -184,6 +182,7 @@ func (t *Trader) SetControl(c map[string]any) {
                 t.Risk.SetControl(t.Control)
         }
 }
+
 func (t *Trader) SetRegime(r map[string]any) {
         if r == nil {
                 r = map[string]any{}
@@ -191,6 +190,7 @@ func (t *Trader) SetRegime(r map[string]any) {
         t.Regime = r
         t.Risk.SetRegime(r)
 }
+
 func (t *Trader) ResetCycle() { t.EntriesThisCycle = 0; t.lastTradeUnix = 0 }
 func (t *Trader) persistPeaks() {
         payload := map[string]any{}
@@ -257,6 +257,7 @@ func (t *Trader) maxNewEntries() int {
         }
         return int(t.Risk.CfgF("max_new_entries_per_cycle", 1))
 }
+
 func (t *Trader) throttle() {
         gap := t.Risk.CfgF("min_trade_gap_sec", 1.2)
         wait := t.lastTradeUnix + gap - float64(time.Now().UnixNano())/1e9
@@ -264,9 +265,8 @@ func (t *Trader) throttle() {
                 time.Sleep(time.Duration(wait * float64(time.Second)))
         }
 }
+
 func (t *Trader) markTradeTS() { t.lastTradeUnix = float64(time.Now().UnixNano()) / 1e9 }
-
-
 func (t *Trader) capitalStyle() string {
         if t.Risk != nil {
                 return t.Risk.CapitalStyle()
@@ -336,16 +336,16 @@ func (t *Trader) styleSellPlan(action string, score, avg, price, held float64, s
 func (t *Trader) Execute(sig strategy.Signal, prices map[int]float64, heldShares float64) []map[string]any {
         tradeMode := fmt.Sprint(t.Control["trade_mode"])
         if tradeMode == "paused" {
-                return []map[string]any{{"status": "skip", "reason": "?????", "stock_id": sig.StockID, "code": sig.Code}}
+                return []map[string]any{{"status": "skip", "reason": "交易已暂停", "stock_id": sig.StockID, "code": sig.Code}}
         }
         if tradeMode == "sell_only" && sig.Action == "buy" {
-                return []map[string]any{{"status": "skip", "reason": "?????", "stock_id": sig.StockID, "code": sig.Code}}
+                return []map[string]any{{"status": "skip", "reason": "只卖不买", "stock_id": sig.StockID, "code": sig.Code}}
         }
         if asBool(t.Regime["force_sell_only"]) && sig.Action == "buy" {
                 return []map[string]any{{"status": "skip", "reason": fmt.Sprintf("??%v:??", t.Regime["name"]), "stock_id": sig.StockID, "code": sig.Code}}
         }
-        if t.Risk.InCooldown(sig.StockID) && (sig.Action == "buy" || sig.Action == "sell") {
-                return []map[string]any{{"status": "skip", "reason": "???", "stock_id": sig.StockID, "code": sig.Code}}
+        if t.Risk.InCooldown(sig.StockID) {
+                return []map[string]any{{"status": "skip", "reason": "冷却中", "stock_id": sig.StockID, "code": sig.Code}}
         }
         if t.Mode == "paper" && t.Paper != nil {
                 return t.executePaper(sig, prices, tradeMode)
@@ -367,13 +367,13 @@ func (t *Trader) executePaper(sig strategy.Signal, prices map[int]float64, trade
                         return []map[string]any{tr}
                 }
                 frac := t.Risk.ReduceFraction()
-                if frac > 0 && tradeMode != "paused" && sig.Action != "buy" {
+                if frac > 0 && tradeMode != "paused" && sig.Action == "hold" {
                         pnl := (sig.Price - pos.AvgPrice) / math.Max(pos.AvgPrice, 1e-9)
                         if pnl < 0.03 {
                                 qty := math.Max(math.Floor(pos.Shares*frac), 1)
                                 if qty > 0 && qty < pos.Shares {
-                                        tr := t.Paper.sell(sig, qty, fmt.Sprintf("????%.0f%%", frac*100))
-                                        t.Risk.MarkTrade(sig.StockID)
+                                                        tr := t.Paper.sell(sig, qty, fmt.Sprintf("风控减仓%.0f%%", frac*100))
+                                        t.Risk.MarkReduce(sig.StockID)
                                         t.persistPeaks()
                                         return []map[string]any{tr}
                                 }
@@ -492,7 +492,7 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                                 return []map[string]any{tr}
                         }
                         frac := t.Risk.ReduceFraction()
-                        if frac > 0 && tradeMode != "paused" && sig.Action != "buy" {
+                        if frac > 0 && tradeMode != "paused" && sig.Action == "hold" {
                                 pnl := (sig.Price - avg) / math.Max(avg, 1e-9)
                                 if pnl < 0.03 {
                                         qty := int(math.Max(math.Floor(held*frac), 1))
@@ -508,8 +508,8 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                                                 }
                                                 if qty > 0 {
                                                         t.throttle()
-                                                        tr := t.liveSell(sig, qty, fmt.Sprintf("????%.0f%%", frac*100))
-                                                        t.markTradeTS(); t.Risk.MarkTrade(sig.StockID)
+                                                        tr := t.liveSell(sig, qty, fmt.Sprintf("风控减仓%.0f%%", frac*100))
+                                                        t.markTradeTS(); t.Risk.MarkReduce(sig.StockID)
                                                         return []map[string]any{tr}
                                                 }
                                         }

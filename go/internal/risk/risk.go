@@ -93,6 +93,16 @@ func (m *Manager) CapitalStyle() string {
 func (m *Manager) MarkTrade(stockID int) {
         m.Cooldowns[stockID] = float64(time.Now().Unix()) + m.CfgF("cooldown_sec", 45)
 }
+
+// MarkReduce uses a longer cooldown so risk_off 35% partial exits do not chain every cycle.
+func (m *Manager) MarkReduce(stockID int) {
+        sec := m.CfgF("reduce_cooldown_sec", 300)
+        if sec < m.CfgF("cooldown_sec", 45) {
+                sec = m.CfgF("cooldown_sec", 45)
+        }
+        m.Cooldowns[stockID] = float64(time.Now().Unix()) + sec
+}
+
 func (m *Manager) InCooldown(stockID int) bool {
         return float64(time.Now().Unix()) < m.Cooldowns[stockID]
 }
