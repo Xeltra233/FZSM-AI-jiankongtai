@@ -2164,6 +2164,7 @@ async function applyControl(mode){
     r = String(r==null?'':r).trim();
     if(!r) return '';
     const map = {
+      '????35%':'风控减仓35%',
       already_checked_or_disabled:'今日已签到',
       empty:'列表为空',
       analyze_only:'分析模式，不下单',
@@ -2370,9 +2371,24 @@ async function applyControl(mode){
   }
 
 
-  function formatTradeReason(t){
+  
+  function normalizeTradeReasonText(s){
+    s = String(s==null?'':s);
+    if(!s) return s;
+    // historical garbled reduce reason written before UTF-8 fix
+    s = s.replace(/^\?{2,}\s*35%\s*$/g, '风控减仓35%');
+    s = s.replace(/\?{2,}\s*(\d+(?:\.\d+)?)%/g, '风控减仓$1%');
+    s = s.replace(/风控减仓(\d+(?:\.\d+)?)%/g, '风控减仓$1%');
+    // keep already-good Chinese reasons
+    if(/风控减仓\s*\d/.test(s) && /\?/.test(s)){
+      s = s.replace(/\?+/g,'').replace(/风控减仓\s*/,'风控减仓');
+    }
+    return s;
+  }
+
+function formatTradeReason(t){
     t = t || {};
-    const raw = t.reason || '';
+    const raw = normalizeTradeReasonText(t.reason || '');
     const rawObj = t.raw || {};
     let msg = '';
     if(rawObj && typeof rawObj === 'object'){
@@ -2395,6 +2411,7 @@ async function applyControl(mode){
       }
     }
     if(!msg) msg = zhReason(raw);
+    msg = normalizeTradeReasonText(msg);
     if(/破产冷却/.test(String(msg)) || /破产冷却/.test(String(raw))){
       const mm = String(msg||raw).match(/破产冷却[^"'\]}\n]*/);
       msg = mm ? mm[0].replace(/[,\s]+$/,'') : '破产冷却中，暂时无法交易';
