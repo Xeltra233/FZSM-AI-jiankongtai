@@ -427,6 +427,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/admin/auth/status", s.handleAdminAuthStatus)
 	mux.HandleFunc("/api/admin/login", s.handleAdminLogin)
 	mux.HandleFunc("/api/admin/logout", s.handleAdminLogout)
+	mux.HandleFunc("/api/admin/db/export", s.handleDBExport)
 	mux.HandleFunc("/api/auth/cookies/status", s.handleCookieStatus)
 	mux.HandleFunc("/api/auth/cookies/export", s.handleCookieExport)
 	mux.HandleFunc("/api/auth/cookies/import", s.handleCookieImport)

@@ -6,13 +6,15 @@ import (
         "fmt"
         "os"
         "path/filepath"
+        "strings"
         "time"
 
         _ "modernc.org/sqlite"
 )
 
 type Storage struct {
-        db *sql.DB
+        db   *sql.DB
+        path string
 }
 
 func Open(dbPath string) (*Storage, error) {
@@ -23,7 +25,7 @@ func Open(dbPath string) (*Storage, error) {
         if err != nil {
                 return nil, err
         }
-        s := &Storage{db: db}
+        s := &Storage{db: db, path: dbPath}
         if err := s.init(); err != nil {
                 _ = db.Close()
                 return nil, err
@@ -32,6 +34,31 @@ func Open(dbPath string) (*Storage, error) {
 }
 
 func (s *Storage) Close() error { return s.db.Close() }
+
+// Path returns the on-disk path of the live database file.
+func (s *Storage) Path() string { return s.path }
+
+// SnapshotTo writes a consistent copy of the live DB to dst using SQLite's
+// `VACUUM INTO`. This is safe to call while the bot is actively writing: it
+// produces a transactionally-consistent snapshot without exporting a
+// half-written / WAL-inconsistent file. dst must not already exist (removed
+// first if present).
+func (s *Storage) SnapshotTo(dst string) error {
+        if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+                return err
+        }
+        // VACUUM INTO fails if the target file already exists.
+        if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
+                return err
+        }
+        // VACUUM INTO's argument is a string-literal expression; bind parameters
+        // are not reliably supported across drivers, so embed the path as a
+        // safely single-quote-escaped SQL literal. dst is server-generated (temp
+        // dir + timestamp), so this is not an injection surface.
+        lit := "'" + strings.ReplaceAll(dst, "'", "''") + "'"
+        _, err := s.db.Exec(`VACUUM INTO ` + lit)
+        return err
+}
 
 func (s *Storage) init() error {
         _, err := s.db.Exec(`

@@ -1532,10 +1532,11 @@
                 <button type="button" class="primary" id="btnCookieProbe" onclick="probeCookies()">仅探测</button>
                 <button type="button" class="warn" id="btnCookieImport" onclick="importCookies()">导入并探测</button>
                 <button type="button" class="danger" id="btnCookieClear" onclick="clearCookies()">清除</button>
+                <button type="button" id="btnDbExport" class="ghost" onclick="exportDatabase()">导出数据库</button>
                 <button type="button" id="btnAdminLogout" class="ghost" onclick="gateLogout()">退出登录</button>
               </div>
               <div class="cookie-msg" id="cookieMgrMsg">准备就绪</div>
-              <div class="farm-note" id="cookieMgrHint">导入后写入 auth/cookies.json；清除前会自动备份。</div>
+              <div class="farm-note" id="cookieMgrHint">导入后写入 auth/cookies.json；清除前会自动备份。导出数据库为完整交易/信号快照，仅在安全环境使用。</div>
             </div>
 
           </div>
@@ -4278,6 +4279,40 @@ cards.push(
     const o = Object.assign({credentials:'same-origin'}, opts||{});
     o.headers = Object.assign({}, cookieAdminHeaders(), (opts && opts.headers) || {});
     return fetch(url, o);
+  }
+  async function exportDatabase(){
+    const btn = document.getElementById('btnDbExport');
+    if(btn) btn.disabled = true;
+    setCookieMsg('正在生成数据库快照…', '');
+    try{
+      const r = await fetch('/api/admin/db/export', {credentials:'same-origin'});
+      if(!r.ok){
+        let msg = '导出失败 ('+r.status+')';
+        try{ const j = await r.json(); if(j && (j.message||j.error)) msg = (j.message||j.error); }catch(e){}
+        setCookieMsg(msg, 'err');
+        try{ toast(msg, 'err', '数据库导出'); }catch(e){}
+        return;
+      }
+      const blob = await r.blob();
+      let fname = 'fzsm_bot.db';
+      const cd = r.headers.get('Content-Disposition') || '';
+      const m = cd.match(/filename="?([^"]+)"?/);
+      if(m && m[1]) fname = m[1];
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fname;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      const mb = (blob.size/1048576).toFixed(1);
+      setCookieMsg('已导出 '+fname+'（'+mb+' MB）', 'ok');
+      try{ toast('数据库已导出 '+mb+' MB', 'ok', '数据库导出'); }catch(e){}
+    }catch(e){
+      setCookieMsg('导出异常：'+(e && e.message ? e.message : e), 'err');
+      try{ toast('导出异常', 'err', '数据库导出'); }catch(e2){}
+    }finally{
+      if(btn) btn.disabled = false;
+    }
   }
   function setGateMsg(msg, cls){
     const el = document.getElementById('gateMsg');
