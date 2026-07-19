@@ -456,7 +456,7 @@ func (t *Trader) Execute(sig strategy.Signal, prices map[int]float64, heldShares
                 return []map[string]any{{"status": "skip", "reason": "只卖不买", "stock_id": sig.StockID, "code": sig.Code}}
         }
         if asBool(t.Regime["force_sell_only"]) && sig.Action == "buy" {
-                return []map[string]any{{"status": "skip", "reason": fmt.Sprintf("??%v:??", t.Regime["name"]), "stock_id": sig.StockID, "code": sig.Code}}
+                return []map[string]any{{"status": "skip", "reason": fmt.Sprintf("市场状态 %v：只卖不买", t.Regime["name"]), "stock_id": sig.StockID, "code": sig.Code}}
         }
         if t.Risk.InCooldown(sig.StockID) {
                 return []map[string]any{{"status": "skip", "reason": "冷却中", "stock_id": sig.StockID, "code": sig.Code}}
@@ -497,7 +497,7 @@ func (t *Trader) executePaper(sig strategy.Signal, prices map[int]float64, trade
         if sig.Action == "buy" {
                 maxNew := t.maxNewEntries()
                 if t.EntriesThisCycle >= maxNew && pos == nil {
-                        return []map[string]any{{"status": "skip", "reason": "????????", "stock_id": sig.StockID}}
+                        return []map[string]any{{"status": "skip", "reason": "本轮新增仓位已达上限", "stock_id": sig.StockID}}
                 }
                 if pos != nil {
                         if ok, why := t.Risk.AllowAdd(pos.AvgPrice, sig.Price); !ok {
@@ -596,7 +596,7 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                                 if prev, err := t.Client.Preview(sig.StockID, "sell", sellShares); err == nil {
                                         avail := int(asF(prev["available_shares"]))
                                         if avail <= 0 {
-                                                return []map[string]any{{"status": "skip", "reason": "??????(??T+1)", "stock_id": sig.StockID, "code": sig.Code}}
+                                                return []map[string]any{{"status": "skip", "reason": "当前无可卖数量（可能受 T+1 限制）", "stock_id": sig.StockID, "code": sig.Code}}
                                         }
                                         if avail < sellShares {
                                                 sellShares = avail
@@ -621,7 +621,7 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                                                 if prev, err := t.Client.Preview(sig.StockID, "sell", qty); err == nil {
                                                         avail := int(asF(prev["available_shares"]))
                                                         if avail <= 0 {
-                                                                return []map[string]any{{"status": "skip", "reason": "??????(??T+1)", "stock_id": sig.StockID, "code": sig.Code}}
+                                                                return []map[string]any{{"status": "skip", "reason": "当前无可卖数量（可能受 T+1 限制）", "stock_id": sig.StockID, "code": sig.Code}}
                                                         }
                                                         if avail < qty {
                                                                 qty = avail
@@ -656,7 +656,7 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                                 }
                                 maxSingle := maxSinglePct * math.Max(equity, 1)
                                 if posVal >= maxSingle {
-                                        return []map[string]any{{"status": "skip", "reason": "??????", "stock_id": sig.StockID, "code": sig.Code}}
+                                        return []map[string]any{{"status": "skip", "reason": "单标的组合上限已满", "stock_id": sig.StockID, "code": sig.Code}}
                                 }
                                 avgHere := asF(first(p, "avg_price", "cost_price", "avg_cost"))
                                 if ok, why := t.Risk.AllowAdd(avgHere, sig.Price); !ok {
@@ -665,7 +665,7 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                         }
                 }
                 if t.EntriesThisCycle >= maxNew && !already {
-                        return []map[string]any{{"status": "skip", "reason": "????????", "stock_id": sig.StockID}}
+                        return []map[string]any{{"status": "skip", "reason": "本轮新增仓位已达上限", "stock_id": sig.StockID}}
                 }
                 var targetPct, tradeEV *float64
                 if tev := sig.TradeEV; tev != nil {
@@ -733,7 +733,7 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                         if avail > 0 && avail < sellShares {
                                 sellShares = avail
                         } else if avail <= 0 {
-                                return []map[string]any{{"status": "skip", "reason": "??????", "stock_id": sig.StockID, "code": sig.Code}}
+                                return []map[string]any{{"status": "skip", "reason": "当前无可卖数量", "stock_id": sig.StockID, "code": sig.Code}}
                         }
                 }
                 t.throttle()

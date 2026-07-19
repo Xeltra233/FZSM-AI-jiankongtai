@@ -59,14 +59,14 @@ http://127.0.0.1:8787  （全模块页签）
 **文档与 map 对齐已在 goal-2 Task2 完成。**  
 全局赚钱自动化可运行；剩余为安全门控策略优化与 dashboard 视觉修复，不是功能缺省。
 
-## goal-2 ?????2026-07-13?
-- ?????Dashboard ??/?????????????????/??/tilt???
-- cookie ???LLM ?????GitHub ?????
-- Go ???????bot/dashboard/doctor/paper/primary????
-- ???? review????`goal-2/FINAL_REVIEW.md`?
+## goal-2 补充验收（2026-07-13）
+- 已修复 Dashboard 背景、滚动条、空白模块、信息页、控制页与倾斜卡片等视觉问题。
+- Cookie 管理、LLM 用量跟踪与 GitHub 同步均已验收。
+- Go 主路径覆盖 bot、dashboard、doctor、paper 和 primary 运行方式。
+- 完整 review 见 `goal-2/FINAL_REVIEW.md`。
 
-## Go-only ???2026-07-13?
-- Python `src/` ???????? Go
-- ???`start_bot.bat` / `bin/fzsm-bot.exe -primary`
-- ???`http://127.0.0.1:8787/`?`fzsm-dashboard.exe`?
-- ???`bin/fzsm-doctor.exe -c config.yaml`
+## Go-only 迁移（2026-07-13）
+- Python `src/` 已移除，主实现统一为 Go。
+- 启动入口：`start_bot.bat` / `bin/fzsm-bot.exe -primary`。
+- 面板入口：`http://127.0.0.1:8787/`，由 `fzsm-dashboard.exe` 提供。
+- 体检入口：`bin/fzsm-doctor.exe -c config/config.yaml`。
