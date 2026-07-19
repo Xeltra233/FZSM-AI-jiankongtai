@@ -1,13 +1,14 @@
 package trader
+
 import (
         "fmt"
-        "math"
-        "strings"
-        "time"
         "fzsmbot/internal/client"
         "fzsmbot/internal/risk"
         "fzsmbot/internal/storage"
         "fzsmbot/internal/strategy"
+        "math"
+        "strings"
+        "time"
 )
 
 type Trader struct {
@@ -66,12 +67,12 @@ func loadPaper(st *storage.Storage, seed float64) *PaperBroker {
                                 continue
                         }
                         pb.Positions[sid] = &risk.Position{
-                                StockID: sid,
-                                Code:    fmt.Sprint(first(p, "code")),
-                                Name:    fmt.Sprint(first(p, "name")),
-                                Shares:  shares,
-                                AvgPrice: asF(first(p, "avg_price", "cost_price", "avg_cost")),
-                                OpenedAt: asF(first(p, "opened_at")),
+                                StockID:      sid,
+                                Code:         fmt.Sprint(first(p, "code")),
+                                Name:         fmt.Sprint(first(p, "name")),
+                                Shares:       shares,
+                                AvgPrice:     asF(first(p, "avg_price", "cost_price", "avg_cost")),
+                                OpenedAt:     asF(first(p, "opened_at")),
                                 HighestPrice: asF(first(p, "highest_price", "avg_price")),
                         }
                         if pb.Positions[sid].OpenedAt <= 0 {
@@ -277,10 +278,65 @@ func (t *Trader) AccountSnapshot(prices map[int]float64) map[string]any {
 }
 
 func (t *Trader) maxNewEntries() int {
-        if v := asF(t.Regime["max_new_entries_per_cycle"]); v > 0 || t.Regime["max_new_entries_per_cycle"] != nil {
-                return int(v)
+        base := int(t.Risk.CfgF("max_new_entries_per_cycle", 1))
+        if raw, ok := t.Regime["max_new_entries_per_cycle"]; ok && raw != nil {
+                if v := asF(raw); v > 0 {
+                        base = int(v)
+                } else {
+                        return 0
+                }
         }
-        return int(t.Risk.CfgF("max_new_entries_per_cycle", 1))
+        if t.capitalStyle() == "all_in" && !asBool(t.Regime["force_sell_only"]) {
+                if fast := int(t.Risk.CfgF("all_in_max_new_entries_per_cycle", 3)); fast > base {
+                        base = fast
+                }
+        }
+        return base
+}
+
+func tradeSucceeded(tr map[string]any) bool {
+        status := strings.ToLower(strings.TrimSpace(fmt.Sprint(tr["status"])))
+        switch status {
+        case "submitted", "filled", "ok", "success":
+                return true
+        default:
+                return false
+        }
+}
+
+func firstPositiveInt(m map[string]any, keys ...string) int {
+        for _, key := range keys {
+                if n := int(asF(m[key])); n > 0 {
+                        return n
+                }
+        }
+        return 0
+}
+
+func clampBuyShares(requested int, preview map[string]any) int {
+        if requested <= 0 {
+                return 0
+        }
+        limit := firstPositiveInt(preview,
+                "max_buy_shares", "buy_limit_remaining", "remaining_buy_shares",
+                "remaining_shares", "max_shares", "order_limit_shares",
+        )
+        if quoted := firstPositiveInt(preview, "shares"); quoted > 0 && quoted < requested && (limit == 0 || quoted < limit) {
+                limit = quoted
+        }
+        if limit > 0 && requested > limit {
+                return limit
+        }
+        return requested
+}
+
+func retryableBuyLimit(err error, raw map[string]any) bool {
+        text := ""
+        if err != nil {
+                text += err.Error()
+        }
+        text += " " + fmt.Sprint(raw["raw"])
+        return strings.Contains(text, "单笔上限") || strings.Contains(text, "买入数量超过上限")
 }
 
 func (t *Trader) throttle() {
@@ -397,7 +453,7 @@ func (t *Trader) executePaper(sig strategy.Signal, prices map[int]float64, trade
                         if pnl < 0.03 {
                                 qty := math.Max(math.Floor(pos.Shares*frac), 1)
                                 if qty > 0 && qty < pos.Shares {
-                                                        tr := t.Paper.sell(sig, qty, fmt.Sprintf("风控减仓%.0f%%", frac*100))
+                                        tr := t.Paper.sell(sig, qty, fmt.Sprintf("风控减仓%.0f%%", frac*100))
                                         t.markReduceCD(sig.StockID)
                                         t.persistPeaks()
                                         return []map[string]any{tr}
@@ -418,21 +474,27 @@ func (t *Trader) executePaper(sig strategy.Signal, prices map[int]float64, trade
                 var targetPct, tradeEV *float64
                 if tev := sig.TradeEV; tev != nil {
                         if v, ok := tev["target_position_pct"]; ok {
-                                f := asF(v); targetPct = &f
+                                f := asF(v)
+                                targetPct = &f
                         }
                         if v, ok := tev["net_edge"]; ok {
-                                f := asF(v); tradeEV = &f
+                                f := asF(v)
+                                tradeEV = &f
                         }
                 }
-                d := t.Risk.SizeBuy(t.Paper.equity(prices), t.Paper.Cash, sig.Price, len(t.Paper.Positions), sig.Score, targetPct, tradeEV)
+                d := t.Risk.SizeBuyForPosition(t.Paper.equity(prices), t.Paper.Cash, sig.Price, len(t.Paper.Positions), pos != nil, sig.Score, targetPct, tradeEV)
                 if !d.Allow {
                         return []map[string]any{{"status": "skip", "reason": d.Reason, "stock_id": sig.StockID}}
                 }
                 tr := t.Paper.buy(sig, d.Shares, sig.Reason+" | "+d.Reason)
-                t.Risk.UpdatePeak(sig.StockID, sig.Price, 0)
-                t.markTradeCD(sig.StockID)
-                t.EntriesThisCycle++
-                t.persistPeaks()
+                if tradeSucceeded(tr) {
+                        t.Risk.UpdatePeak(sig.StockID, sig.Price, 0)
+                        t.markTradeCD(sig.StockID)
+                        if pos == nil {
+                                t.EntriesThisCycle++
+                        }
+                        t.persistPeaks()
+                }
                 return []map[string]any{tr}
         }
         if sig.Action == "sell" && pos != nil {
@@ -454,15 +516,15 @@ func (t *Trader) executePaper(sig strategy.Signal, prices map[int]float64, trade
 func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldShares float64, tradeMode string) []map[string]any {
         // Hard gate: do not place live buy/sell until platform bankruptcy cooldown ends.
         if blocked, msg, until := t.BankruptcyBlocked(); blocked {
-        	return []map[string]any{{
-        		"status":   "skip",
-        		"reason":   msg,
-        		"stock_id": sig.StockID,
-        		"code":     sig.Code,
-        		"side":     sig.Action,
-        		"gate":     "bankruptcy_cooldown",
-        		"until":    until.Format(time.RFC3339),
-        	}}
+                return []map[string]any{{
+                        "status":   "skip",
+                        "reason":   msg,
+                        "stock_id": sig.StockID,
+                        "code":     sig.Code,
+                        "side":     sig.Action,
+                        "gate":     "bankruptcy_cooldown",
+                        "until":    until.Format(time.RFC3339),
+                }}
         }
         acc := t.AccountSnapshot(prices)
         positions, _ := acc["positions"].([]any)
@@ -509,7 +571,8 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                                 }
                                 t.throttle()
                                 tr := t.liveSell(sig, sellShares, why)
-                                t.markTradeTS(); t.markTradeCD(sig.StockID)
+                                t.markTradeTS()
+                                t.markTradeCD(sig.StockID)
                                 if sellShares >= int(held) {
                                         t.Risk.ClearPeak(sig.StockID)
                                 }
@@ -534,7 +597,8 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                                                 if qty > 0 {
                                                         t.throttle()
                                                         tr := t.liveSell(sig, qty, fmt.Sprintf("风控减仓%.0f%%", frac*100))
-                                                        t.markTradeTS(); t.markReduceCD(sig.StockID)
+                                                        t.markTradeTS()
+                                                        t.markReduceCD(sig.StockID)
                                                         return []map[string]any{tr}
                                                 }
                                         }
@@ -553,7 +617,11 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                                 if posVal == 0 {
                                         posVal = asF(p["shares"]) * sig.Price
                                 }
-                                maxSingle := t.Risk.CfgF("max_single_position_pct", 0.22) * math.Max(equity, 1)
+                                maxSinglePct := t.Risk.CfgF("max_single_position_pct", 0.22)
+                                if t.capitalStyle() == "all_in" {
+                                        maxSinglePct = t.Risk.CfgF("all_in_max_single_position_pct", 0.30)
+                                }
+                                maxSingle := maxSinglePct * math.Max(equity, 1)
                                 if posVal >= maxSingle {
                                         return []map[string]any{{"status": "skip", "reason": "??????", "stock_id": sig.StockID, "code": sig.Code}}
                                 }
@@ -569,21 +637,53 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                 var targetPct, tradeEV *float64
                 if tev := sig.TradeEV; tev != nil {
                         if v, ok := tev["target_position_pct"]; ok {
-                                f := asF(v); targetPct = &f
+                                f := asF(v)
+                                targetPct = &f
                         }
                         if v, ok := tev["net_edge"]; ok {
-                                f := asF(v); tradeEV = &f
+                                f := asF(v)
+                                tradeEV = &f
                         }
                 }
-                d := t.Risk.SizeBuy(max3(equity, cash, 1), cash, sig.Price, len(positions), sig.Score, targetPct, tradeEV)
+                d := t.Risk.SizeBuyForPosition(max3(equity, cash, 1), cash, sig.Price, len(positions), already, sig.Score, targetPct, tradeEV)
                 if !d.Allow {
                         return []map[string]any{{"status": "skip", "reason": d.Reason, "stock_id": sig.StockID}}
                 }
+                maxSinglePct := t.Risk.CfgF("max_single_position_pct", 0.22)
+                if t.capitalStyle() == "all_in" {
+                        maxSinglePct = t.Risk.CfgF("all_in_max_single_position_pct", 0.30)
+                }
+                currentValue := 0.0
+                if already {
+                        for _, p0 := range positions {
+                                p, _ := p0.(map[string]any)
+                                if int(asF(first(p, "stock_id", "id"))) == sig.StockID {
+                                        currentValue = asF(p["market_value"])
+                                        if currentValue <= 0 {
+                                                currentValue = asF(first(p, "shares", "quantity")) * sig.Price
+                                        }
+                                        break
+                                }
+                        }
+                }
+                remainingValue := math.Max(maxSinglePct*math.Max(equity, 1)-currentValue, 0)
+                if allowedShares := math.Floor(remainingValue / sig.Price); allowedShares < d.Shares {
+                        d.Shares = allowedShares
+                }
+                if d.Shares < 1 {
+                        return []map[string]any{{"status": "skip", "reason": "单标的组合上限已满", "stock_id": sig.StockID, "code": sig.Code}}
+                }
                 t.throttle()
                 tr := t.liveBuy(sig, int(d.Shares), sig.Reason+" | "+d.Reason)
-                t.Risk.UpdatePeak(sig.StockID, sig.Price, 0)
-                t.persistPeaks(); t.markTradeTS(); t.markTradeCD(sig.StockID)
-                t.EntriesThisCycle++
+                if tradeSucceeded(tr) {
+                        t.Risk.UpdatePeak(sig.StockID, sig.Price, 0)
+                        t.persistPeaks()
+                        t.markTradeTS()
+                        t.markTradeCD(sig.StockID)
+                        if !already {
+                                t.EntriesThisCycle++
+                        }
+                }
                 return []map[string]any{tr}
         }
         if sig.Action == "sell" && held > 0 {
@@ -605,7 +705,8 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
                 }
                 t.throttle()
                 tr := t.liveSell(sig, sellShares, why)
-                t.markTradeTS(); t.markTradeCD(sig.StockID)
+                t.markTradeTS()
+                t.markTradeCD(sig.StockID)
                 if sellShares >= int(held) {
                         t.Risk.ClearPeak(sig.StockID)
                 }
@@ -616,23 +717,56 @@ func (t *Trader) executeLive(sig strategy.Signal, prices map[int]float64, heldSh
 }
 
 func (t *Trader) liveBuy(sig strategy.Signal, shares int, reason string) map[string]any {
-        var prev any
-        if p, err := t.Client.Preview(sig.StockID, "buy", shares); err == nil {
-                prev = p
+        requested := shares
+        maxRetries := int(t.Risk.CfgF("buy_limit_retry_max", 3))
+        if maxRetries < 0 {
+                maxRetries = 0
         }
-        raw, err := t.Client.BuyMarket(sig.StockID, shares)
+        attempts := []any{}
+        var raw map[string]any
+        var err error
+        var prev map[string]any
+        for attempt := 0; attempt <= maxRetries && shares > 0; attempt++ {
+                prev = nil
+                if p, previewErr := t.Client.Preview(sig.StockID, "buy", shares); previewErr == nil {
+                        prev = p
+                        shares = clampBuyShares(shares, p)
+                }
+                if shares <= 0 {
+                        break
+                }
+                raw, err = t.Client.BuyMarket(sig.StockID, shares)
+                attempts = append(attempts, map[string]any{
+                        "attempt": attempt + 1, "shares": shares, "preview": prev,
+                        "result": raw, "error": fmt.Sprint(err),
+                })
+                if err == nil || !retryableBuyLimit(err, raw) || shares <= 1 || attempt >= maxRetries {
+                        break
+                }
+                factor := t.Risk.CfgF("buy_limit_retry_factor", 0.5)
+                if factor <= 0 || factor >= 1 {
+                        factor = 0.5
+                }
+                next := int(math.Floor(float64(shares) * factor))
+                if next >= shares {
+                        next = shares - 1
+                }
+                shares = next
+                if delay := t.Risk.CfgF("buy_limit_retry_delay_ms", 150); delay > 0 {
+                        time.Sleep(time.Duration(delay * float64(time.Millisecond)))
+                }
+        }
         trade := map[string]any{
                 "mode": "live", "stock_id": sig.StockID, "code": sig.Code, "side": "buy",
                 "shares": shares, "price": sig.Price, "status": "submitted", "reason": reason,
-                "raw": map[string]any{"preview": prev, "result": raw},
+                "raw": map[string]any{"requested_shares": requested, "attempts": attempts, "preview": prev, "result": raw},
         }
         if err != nil {
                 trade["status"] = "error"
                 trade["reason"] = err.Error()
-                trade["raw"] = raw
                 t.rememberBankruptcyData(err.Error())
                 if raw != nil {
-                	t.rememberBankruptcyData(raw)
+                        t.rememberBankruptcyData(raw)
                 }
         } else {
                 if v := asF(raw["avg_price"]); v > 0 {
@@ -663,7 +797,7 @@ func (t *Trader) liveSell(sig strategy.Signal, shares int, reason string) map[st
                 trade["raw"] = raw
                 t.rememberBankruptcyData(err.Error())
                 if raw != nil {
-                	t.rememberBankruptcyData(raw)
+                        t.rememberBankruptcyData(raw)
                 }
         } else {
                 if v := asF(raw["avg_price"]); v > 0 {

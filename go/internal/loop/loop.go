@@ -98,9 +98,9 @@ func Once(cfg *config.Config, st *storage.Storage, cli *client.Client, cycle int
         }
 
         type row struct {
-                stock map[string]any
+                stock  map[string]any
                 klines []map[string]any
-                sig strategy.Signal
+                sig    strategy.Signal
         }
         rows := []row{}
         for _, stock := range universe {
@@ -131,6 +131,11 @@ func Once(cfg *config.Config, st *storage.Storage, cli *client.Client, cycle int
         topN := 3
         if v := asF(col.Loop["top_n_trade"]); v > 0 {
                 topN = int(v)
+        }
+        if rm.CapitalStyle() == "all_in" {
+                if fast := int(rm.CfgF("all_in_max_new_entries_per_cycle", 3)); fast > topN {
+                        topN = fast
+                }
         }
         if topN > len(buys) {
                 topN = len(buys)
@@ -226,7 +231,7 @@ func Once(cfg *config.Config, st *storage.Storage, cli *client.Client, cycle int
                 account = tr.AccountSnapshot(prices)
         }
         last := map[string]any{
-                "ts": float64(time.Now().UnixNano()) / 1e9,
+                "ts":    float64(time.Now().UnixNano()) / 1e9,
                 "index": index,
                 "account": map[string]any{
                         "mode": account["mode"], "cash": account["cash"], "equity": account["equity"],

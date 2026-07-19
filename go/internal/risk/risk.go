@@ -25,11 +25,11 @@ type Decision struct {
 }
 
 type Manager struct {
-        Cfg        map[string]any
-        Cooldowns  map[int]float64
-        Regime     map[string]any
-        Peaks      map[int]float64
-        Control    map[string]any
+        Cfg       map[string]any
+        Cooldowns map[int]float64
+        Regime    map[string]any
+        Peaks     map[int]float64
+        Control   map[string]any
 }
 
 func New(cfg map[string]any) *Manager {
@@ -188,6 +188,12 @@ func (m *Manager) ROIHit(openedAt, avg, price float64) (bool, string) {
 }
 
 func (m *Manager) SizeBuy(equity, cash, price float64, openPositions int, score float64, targetPct, tradeEV *float64) Decision {
+        return m.SizeBuyForPosition(equity, cash, price, openPositions, false, score, targetPct, tradeEV)
+}
+
+// SizeBuyForPosition distinguishes a new holding from adding to an existing one.
+// A full position count must not strand deployable cash by blocking valid adds.
+func (m *Manager) SizeBuyForPosition(equity, cash, price float64, openPositions int, existing bool, score float64, targetPct, tradeEV *float64) Decision {
         if price <= 0 || equity <= 0 {
                 return Decision{false, 0, "价格/权益无效"}
         }
@@ -198,11 +204,16 @@ func (m *Manager) SizeBuy(equity, cash, price float64, openPositions int, score 
         if v := int(asF(m.Regime["max_positions"])); v > 0 {
                 maxPos = v
         }
-        if openPositions >= maxPos {
+        style := m.CapitalStyle()
+        if style == "all_in" {
+                if allInMax := m.CfgI("all_in_max_positions", maxPos); allInMax > maxPos {
+                        maxPos = allInMax
+                }
+        }
+        if !existing && openPositions >= maxPos {
                 return Decision{false, 0, fmt.Sprintf("持仓已满(%d/%d)", openPositions, maxPos)}
         }
         reserve := m.CfgF("cash_reserve_pct", 0.12)
-        style := m.CapitalStyle()
         if style == "prefer_cash" {
                 if reserve < 0.28 {
                         reserve = 0.28
@@ -265,7 +276,16 @@ func (m *Manager) SizeBuy(equity, cash, price float64, openPositions int, score 
                 return Decision{false, 0, "仓位目标<=0"}
         }
         budget := math.Min(equity*pct, spendable)
-        if maxN := m.CfgF("max_notional_per_order", 0); maxN > 0 {
+        maxN := m.CfgF("max_notional_per_order", 0)
+        if style == "all_in" {
+                if pctCap := m.CfgF("all_in_max_notional_pct", 0.08) * equity; pctCap > maxN {
+                        maxN = pctCap
+                }
+                if hardCap := m.CfgF("all_in_max_notional_per_order", 0); hardCap > 0 && maxN > hardCap {
+                        maxN = hardCap
+                }
+        }
+        if maxN > 0 {
                 budget = math.Min(budget, maxN)
         }
         shares := budget / price
