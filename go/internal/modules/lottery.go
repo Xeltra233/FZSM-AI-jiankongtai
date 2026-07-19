@@ -253,10 +253,15 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 	balance := asFloat(me["remaining_lobster"])
 	maxBalancePct := slotNum(lcfg, "paid_premium_max_balance_pct", 0.005)
 	budgetOK := entryFee > 0 && balance >= entryFee && entryFee <= balance*maxBalancePct
+	if cap, managed := capitalAllocationCap(values, "lottery_paid_premium"); managed {
+		budgetOK = budgetOK && cap >= entryFee
+		paidDecision["allocator_cap"] = cap
+	}
 	if flagOn(values, "lottery.auto_draw_premium_paid", asBool(lcfg["auto_draw_premium_paid"], false)) && asBool(paidDecision["ready"], false) && budgetOK {
 		for i := 0; i < paidMax; i++ {
 			raw, err := c.LotteryDraw(true)
 			if err != nil {
+				recordTraceSample(st, "risk.exec.lottery_paid_premium", "lottery_paid_execution", 0, false, map[string]any{"source": "self_exec"})
 				errors = append(errors, fmt.Sprintf("draw_premium_paid: %v", err))
 				break
 			}
@@ -267,6 +272,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 				premiumEdge = recordTraceSample(st, "risk.obs.free_draw_premium", "free_draw_premium", gross, win, map[string]any{"source": "self_exec_paid", "premium": true, "version": premiumVersion, "used_free": false, "net_lobster": delta, "gross_lobster": gross, "entry_fee": firstNonNil(raw["entry_fee"], entryFee), "tax_lobster": raw["tax_lobster"]})
 			}
 			balance = asFloat(firstNonNil(raw["after_lobster"], balance+delta))
+			recordTraceSample(st, "risk.exec.lottery_paid_premium", "lottery_paid_execution", delta, true, map[string]any{"source": "self_exec"})
 			actions = append(actions, map[string]any{"status": "ok", "action": "draw_premium_paid", "delta": delta, "win": win, "after": balance, "decision": paidDecision})
 			break
 		}

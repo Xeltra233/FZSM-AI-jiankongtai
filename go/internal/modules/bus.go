@@ -1157,9 +1157,6 @@ func RunAll(cfg *config.Config, st *storage.Storage, c *client.Client, cycle int
 	fl := flags.Get(cfg, st)
 	values := asMap(fl["values"])
 
-	farm := RunFarm(cfg, st, c)
-	_ = st.SetState("farm", farm)
-
 	account, userName, accErr := BuildAccountFromLive(c)
 	if accErr != nil {
 		prevLoop := st.GetStateMap("last_loop")
@@ -1168,6 +1165,10 @@ func RunAll(cfg *config.Config, st *storage.Storage, c *client.Client, cycle int
 			userName = fmt.Sprint(st.GetStateMap("service")["user_name"])
 		}
 	}
+	allocator := buildCapitalAllocator(cfg, st, account)
+	values["_capital_allocator"] = allocator
+	farm := RunFarm(cfg, st, c)
+	_ = st.SetState("farm", farm)
 
 	order := []string{"spot", "farm", "lottery", "side_hustle", "brokers", "derivatives", "calendar", "leaderboard", "honors", "meeting", "governance", "admin"}
 	results := map[string]any{}
@@ -1196,11 +1197,12 @@ func RunAll(cfg *config.Config, st *storage.Storage, c *client.Client, cycle int
 		}
 	}
 	bundle := map[string]any{
-		"ts":      now(),
-		"order":   order,
-		"modules": results,
-		"counts":  map[string]any{"total": len(order), "error": errN, "ok": okN},
-		"impl":    "go",
+		"ts":                now(),
+		"order":             order,
+		"modules":           results,
+		"counts":            map[string]any{"total": len(order), "error": errN, "ok": okN},
+		"impl":              "go",
+		"capital_allocator": allocator,
 	}
 	_ = st.SetState("modules", bundle)
 

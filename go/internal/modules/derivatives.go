@@ -133,6 +133,7 @@ func planDerivative(contracts []map[string]any, account map[string]any, cfg map[
 	marginCashPct := dnum(cfg, "max_margin_cash_pct", 0.05)
 	marginEquityPct := dnum(cfg, "max_margin_equity_pct", 0.05)
 	maxNotional := dnum(cfg, "max_notional", 5000000)
+	maxMarginAbsolute := dnum(cfg, "max_margin_absolute", -1)
 	rows := []map[string]any{}
 	best := derivativePlan{}
 
@@ -161,6 +162,9 @@ func planDerivative(contracts []map[string]any, account map[string]any, cfg map[
 			side = "long"
 		}
 		margin := math.Min(cash*marginCashPct, equity*marginEquityPct)
+		if maxMarginAbsolute >= 0 {
+			margin = math.Min(margin, maxMarginAbsolute)
+		}
 		if maxNotional > 0 {
 			margin = math.Min(margin, maxNotional/float64(leverage))
 		}
@@ -255,7 +259,13 @@ func derivativePlanMap(p derivativePlan) map[string]any {
 }
 
 func executeDerivatives(cfg *config.Config, st *storage.Storage, c derivativesAPI, values map[string]any, account map[string]any) map[string]any {
-	dcfg := derivativeCfg(cfg)
+	dcfg := map[string]any{}
+	for k, v := range derivativeCfg(cfg) {
+		dcfg[k] = v
+	}
+	if cap, managed := capitalAllocationCap(values, "derivatives"); managed {
+		dcfg["max_margin_absolute"] = cap
+	}
 	enabled := dbool(dcfg, "enabled", true)
 	tradeEnabled := flagOn(values, "derivatives.trade_enabled", dbool(dcfg, "trade_enabled", false))
 	if !enabled || c == nil {
@@ -321,6 +331,7 @@ func executeDerivatives(cfg *config.Config, st *storage.Storage, c derivativesAP
 		closeAttempts++
 		lastTradeAt = now()
 		if err != nil {
+			recordTraceSample(st, "risk.exec.derivatives", "derivatives_execution", 0, false, map[string]any{"source": "self_exec", "operation": "close"})
 			writeFailed = true
 			errors = append(errors, "margin close: "+err.Error())
 			actions = append(actions, map[string]any{"status": "error", "action": "margin_close", "reason": why, "position_id": pid, "raw": raw})
@@ -340,10 +351,12 @@ func executeDerivatives(cfg *config.Config, st *storage.Storage, c derivativesAP
 		writeAction = true
 		lastTradeAt = now()
 		if err != nil {
+			recordTraceSample(st, "risk.exec.derivatives", "derivatives_execution", 0, false, map[string]any{"source": "self_exec", "operation": "open"})
 			writeFailed = true
 			errors = append(errors, "margin open: "+err.Error())
 			actions = append(actions, map[string]any{"status": "error", "action": "margin_order", "operation": "open", "body": body, "raw": raw, "reason": err.Error()})
 		} else {
+			recordTraceSample(st, "risk.exec.derivatives", "derivatives_execution", best.NetEdge, true, map[string]any{"source": "self_exec", "operation": "open"})
 			actions = append(actions, map[string]any{"status": "submitted", "action": "margin_order", "operation": "open", "body": body, "raw": raw, "net_edge": best.NetEdge})
 		}
 	} else if !tradeEnabled {
