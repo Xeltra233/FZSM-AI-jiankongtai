@@ -148,6 +148,10 @@ func saveSlotEdge(st *storage.Storage, edge map[string]any) {
 
 func updateSlotEdge(st *storage.Storage, lcfg map[string]any, slotCfg map[string]any) map[string]any {
 	prev := loadSlotEdge(st)
+	version := slotConfigVersion(slotCfg)
+	if old := stringValue(prev["version"]); old != "" && old != version {
+		prev = map[string]any{"previous_versions": archiveObservation(prev), "version": version, "version_started_at": now()}
+	}
 	theory := computeSlotTheory(slotCfg)
 	minSamples := int(slotNum(lcfg, "slot_min_samples", 30))
 	if minSamples < 1 {
@@ -189,6 +193,20 @@ func updateSlotEdge(st *storage.Storage, lcfg map[string]any, slotCfg map[string
 	}
 	edgeOK := asBool(theory["ok"], false) && useRTP >= minRTP && useEV >= minEV
 	edge := map[string]any{
+		"version":             version,
+		"previous_versions":   prev["previous_versions"],
+		"version_started_at":  prev["version_started_at"],
+		"history":             prev["history"],
+		"sum_sq_delta":        prev["sum_sq_delta"],
+		"min_delta":           prev["min_delta"],
+		"max_delta":           prev["max_delta"],
+		"rolling_samples":     prev["rolling_samples"],
+		"rolling_ev":          prev["rolling_ev"],
+		"rolling_stddev":      prev["rolling_stddev"],
+		"rolling_stderr":      prev["rolling_stderr"],
+		"rolling_lcb_ev":      prev["rolling_lcb_ev"],
+		"rolling_ucb_ev":      prev["rolling_ucb_ev"],
+		"confidence_ready":    prev["confidence_ready"],
 		"ts":                  float64(time.Now().UnixNano()) / 1e9,
 		"theory_ok":           theory["ok"],
 		"theory_rtp":          theoryRTP,
@@ -216,6 +234,7 @@ func updateSlotEdge(st *storage.Storage, lcfg map[string]any, slotCfg map[string
 	} else if theoryRTP < minRTP || theoryEV < minEV {
 		// hard stop on negative theory regardless of samples
 		edge["edge_ok"] = false
+		edge["hard_block"] = true
 		edge["gate"] = "theory_negative"
 		edge["message"] = fmt.Sprintf("理论负期望：RTP=%.2f%% EV/把=%.0f，自动转保持关闭", theoryRTP*100, theoryEV)
 		edge["probe_status"] = "blocked"
@@ -244,36 +263,11 @@ func updateSlotEdge(st *storage.Storage, lcfg map[string]any, slotCfg map[string
 }
 
 func recordSlotSample(st *storage.Storage, delta float64, win bool) map[string]any {
-	edge := loadSlotEdge(st)
-	samples := int(asFloat(edge["samples"])) + 1
-	sumDelta := asFloat(edge["sum_delta"]) + delta
-	wins := int(asFloat(edge["wins"]))
-	if win {
-		wins++
-	}
-	edge["samples"] = samples
-	edge["sum_delta"] = sumDelta
-	edge["wins"] = wins
-	edge["last_delta"] = delta
-	ts := float64(time.Now().UnixNano()) / 1e9
-	edge["last_ts"] = ts
-	// rolling history (latest first, keep 20)
-	item := map[string]any{"ts": ts, "delta": delta, "win": win}
-	hist := []any{item}
-	if old := asSlice(edge["history"]); len(old) > 0 {
-		hist = append(hist, old...)
-	}
-	if len(hist) > 20 {
-		hist = hist[:20]
-	}
-	edge["history"] = hist
-	if samples > 0 {
-		edge["obs_ev_per_spin"] = sumDelta / float64(samples)
-		edge["win_rate"] = float64(wins) / float64(samples)
-		bet := asFloat(edge["bet"])
-		if bet > 0 {
-			edge["obs_rtp"] = 1.0 + (sumDelta / float64(samples) / bet)
-		}
+	prev := loadSlotEdge(st)
+	edge := recordVersionedObservation(st, "lottery.slot_edge", delta, win, map[string]any{"version": prev["version"], "bet": prev["bet"]})
+	edge["obs_ev_per_spin"] = edge["obs_ev"]
+	if bet := asFloat(edge["bet"]); bet > 0 {
+		edge["obs_rtp"] = 1 + asFloat(edge["obs_ev"])/bet
 	}
 	saveSlotEdge(st, edge)
 	return edge

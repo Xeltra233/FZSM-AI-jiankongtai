@@ -252,8 +252,16 @@ lottery:
   auto_checkin: true
   auto_draw_free: true
   auto_draw_premium_free: true
+  auto_draw_premium_paid: false
   max_free_draws_per_cycle: 10
   max_free_premium_draws_per_cycle: 3
+  draw_min_samples: 20
+  draw_confidence_z: 1.96
+  draw_rolling_samples: 100
+  paid_premium_min_samples: 20
+  paid_premium_min_net_ev: 0
+  paid_premium_max_per_cycle: 1
+  paid_premium_max_balance_pct: 0.005
   auto_slot: false
   # Plan B: slot/nailong auto only when proven edge
   # theory RTP currently ~74% (negative EV) so auto stays blocked until config edge changes

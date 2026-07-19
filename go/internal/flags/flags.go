@@ -22,6 +22,7 @@ var Specs = []Spec{
 	{"lottery.auto_checkin", "lottery", "auto_checkin", "自动签到", "lottery", "low", "每日免费签到，优先执行"},
 	{"lottery.auto_draw_free", "lottery", "auto_draw_free", "自动免费抽", "lottery", "low", "有免费次数时自动抽"},
 	{"lottery.auto_draw_premium_free", "lottery", "auto_draw_premium_free", "自动高级免费抽", "lottery", "low", "有高级免费次数时自动抽"},
+	{"lottery.auto_draw_premium_paid", "lottery", "auto_draw_premium_paid", "自动付费高级抽", "lottery", "high", "仅当前活动样本置信下界覆盖入场费时执行"},
 	{"lottery.auto_slot", "lottery", "auto_slot", "老虎机", "lottery", "high", "正EV门槛：理论/样本正EV才自动转"},
 	{"lottery.auto_yolo", "lottery", "auto_yolo", "搏一搏", "lottery", "high", "正EV门槛：默认负期望拦截，正EV才允许"},
 	{"lottery.auto_nailong", "lottery", "auto_nailong", "奶龙机", "lottery", "high", "与老虎机同接口；正EV门槛"},

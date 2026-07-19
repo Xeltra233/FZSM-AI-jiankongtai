@@ -99,6 +99,7 @@ func buildRiskEdge(kind string, theoryOK bool, theoryRTP, theoryEV, minRTP, minE
 		edge["probe_status"] = "blocked"
 		edge["message"] = kind + "：缺少可分析配置/行情"
 	} else if theoryRTP < minRTP || theoryEV < minEV {
+		edge["hard_block"] = true
 		edge["gate"] = "theory_negative"
 		edge["probe_status"] = "blocked"
 		edge["message"] = fmt.Sprintf("%s：理论负期望 RTP=%.2f%% EV=%.0f，自动执行保持关闭", kind, theoryRTP*100, theoryEV)
@@ -115,38 +116,7 @@ func buildRiskEdge(kind string, theoryOK bool, theoryRTP, theoryEV, minRTP, minE
 }
 
 func recordRiskSample(st *storage.Storage, key string, delta float64, win bool) map[string]any {
-	edge := loadRiskEdge(st, key)
-	samples := int(asFloat(edge["samples"])) + 1
-	sumDelta := asFloat(edge["sum_delta"]) + delta
-	wins := int(asFloat(edge["wins"]))
-	if win {
-		wins++
-	}
-	edge["samples"] = samples
-	edge["sum_delta"] = sumDelta
-	edge["wins"] = wins
-	edge["last_delta"] = delta
-	ts := float64(time.Now().UnixNano()) / 1e9
-	edge["last_ts"] = ts
-	item := map[string]any{"ts": ts, "delta": delta, "win": win}
-	hist := []any{item}
-	if old := asSlice(edge["history"]); len(old) > 0 {
-		hist = append(hist, old...)
-	}
-	if len(hist) > 20 {
-		hist = hist[:20]
-	}
-	edge["history"] = hist
-	if samples > 0 {
-		edge["obs_ev"] = sumDelta / float64(samples)
-		edge["win_rate"] = float64(wins) / float64(samples)
-		bet := asFloat(edge["bet"])
-		if bet > 0 {
-			edge["obs_rtp"] = 1.0 + (sumDelta/float64(samples))/bet
-		}
-	}
-	saveRiskEdge(st, key, edge)
-	return edge
+	return recordVersionedObservation(st, key, delta, win, nil)
 }
 
 // YOLO: all-in dice style paid game. Without published house-edge proof, treat as negative EV.
@@ -419,14 +389,9 @@ func evaluateUnderwriteEdge(st *storage.Storage, bcfg map[string]any, underwrite
 // recordTraceSample is the unified sampler for any traceable predictive stream.
 // key should be namespaced, e.g. risk.edge.yolo / risk.obs.free_draw / risk.obs.farm_harvest.
 func recordTraceSample(st *storage.Storage, key, kind string, delta float64, win bool, extra map[string]any) map[string]any {
-	edge := recordRiskSample(st, key, delta, win)
+	edge := recordVersionedObservation(st, key, delta, win, extra)
 	edge["kind"] = kind
 	edge["predictive"] = true
-	if extra != nil {
-		for k, v := range extra {
-			edge[k] = v
-		}
-	}
 	if edge["source"] == nil || fmt.Sprint(edge["source"]) == "" {
 		edge["source"] = "traceable_sample"
 	}

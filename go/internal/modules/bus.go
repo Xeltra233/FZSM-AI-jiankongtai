@@ -167,6 +167,11 @@ func applyEdgeGate(values map[string]any, edge map[string]any) map[string]any {
 	}
 	out["gate_enabled"] = edgeGateOn(values)
 	out["history_enabled"] = edgeHistoryOn(values)
+	if asBool(out["hard_block"], false) {
+		out["edge_ok"] = false
+		out["gate_bypassed"] = false
+		return out
+	}
 	g := fmt.Sprint(out["gate"])
 	hard := map[string]bool{
 		"trade_disabled":       true,
@@ -297,20 +302,20 @@ func runSide(st *storage.Storage, c *client.Client) map[string]any {
 		}
 	}
 	if len(ss) == 0 && ipoN+betN+fundN == 0 {
-			// traceable market snapshot for predictive features
-	if st != nil {
-		prev := st.GetStateMap("risk.obs.side_hustle")
-		prevN := int(asFloat(prev["ipo_n"]))
-		curN := ipoN + betN + fundN
-		if len(prev) > 0 && curN != prevN {
-			delta := float64(curN - prevN)
-			recordTraceSample(st, "risk.obs.side_hustle", "side_market", delta, delta >= 0, map[string]any{
-				"source": "observe", "ipo_n": ipoN, "bet_n": betN, "fund_n": fundN,
-			})
+		// traceable market snapshot for predictive features
+		if st != nil {
+			prev := st.GetStateMap("risk.obs.side_hustle")
+			prevN := int(asFloat(prev["ipo_n"]))
+			curN := ipoN + betN + fundN
+			if len(prev) > 0 && curN != prevN {
+				delta := float64(curN - prevN)
+				recordTraceSample(st, "risk.obs.side_hustle", "side_market", delta, delta >= 0, map[string]any{
+					"source": "observe", "ipo_n": ipoN, "bet_n": betN, "fund_n": fundN,
+				})
+			}
+			_ = st.SetState("risk.obs.side_hustle", map[string]any{"ipo_n": ipoN, "bet_n": betN, "fund_n": fundN, "ts": now()})
 		}
-		_ = st.SetState("risk.obs.side_hustle", map[string]any{"ipo_n": ipoN, "bet_n": betN, "fund_n": fundN, "ts": now()})
-	}
-return result("side_hustle", "IPO/对赌/基金", "idle", nil, map[string]any{"note": "waiting side runner"}, errors, nil, nil)
+		return result("side_hustle", "IPO/对赌/基金", "idle", nil, map[string]any{"note": "waiting side runner"}, errors, nil, nil)
 	}
 	status := "ok"
 	if len(errors) > 0 && ipoN+betN+fundN == 0 {
@@ -336,7 +341,7 @@ func asSliceMaps(v any) []map[string]any {
 }
 
 func runDerivatives(cfg *config.Config, st *storage.Storage, c derivativesAPI, values map[string]any, account map[string]any) map[string]any {
-        return executeDerivatives(cfg, st, c, values, account)
+	return executeDerivatives(cfg, st, c, values, account)
 }
 
 func runBrokers(st *storage.Storage, c *client.Client, values map[string]any) map[string]any {
@@ -951,7 +956,6 @@ func runLeaderboard(st *storage.Storage, c *client.Client, account map[string]an
 	ev := map[string]any{"aggression": aggression, "rank_est": assetRankEst, "my_equity": myEquity, "boards": 6}
 	return result("leaderboard", "排行榜", status, actions, analysis, errors, ev, nil)
 }
-
 
 func firstNonEmptyStr(xs ...string) string {
 	for _, x := range xs {

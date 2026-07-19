@@ -1,24 +1,16 @@
 package modules
 
-
-
 import (
-
 	"strings"
 
 	"fmt"
-
-
 
 	"fzsmbot/internal/client"
 
 	"fzsmbot/internal/config"
 
 	"fzsmbot/internal/storage"
-
 )
-
-
 
 // RunLottery executes free-positive lottery actions and reports gated high-risk plays.
 
@@ -38,8 +30,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 	analysis := map[string]any{}
 
-
-
 	me, err := c.LotteryMe()
 
 	if err != nil {
@@ -48,23 +38,23 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 	}
 
+	drawVersion := drawObservationVersion("draw", me)
+	premiumVersion := drawObservationVersion("premium_draw", me)
+
 	analysis["me"] = map[string]any{
 
-		"remaining_lobster":        me["remaining_lobster"],
+		"remaining_lobster": me["remaining_lobster"],
 
-		"draws_available":          me["draws_available"],
+		"draws_available": me["draws_available"],
 
-		"draws_available_premium":  me["draws_available_premium"],
+		"draws_available_premium": me["draws_available_premium"],
 
-		"checked_today":            me["checked_today"],
+		"checked_today": me["checked_today"],
 
-		"streak":                   me["streak"],
+		"streak": me["streak"],
 
 		"draws_exchange_available": me["draws_exchange_available"],
-
 	}
-
-
 
 	// 1) free checkin
 
@@ -94,18 +84,17 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 					analysis["me"] = map[string]any{
 
-						"remaining_lobster":        me["remaining_lobster"],
+						"remaining_lobster": me["remaining_lobster"],
 
-						"draws_available":          me["draws_available"],
+						"draws_available": me["draws_available"],
 
-						"draws_available_premium":  me["draws_available_premium"],
+						"draws_available_premium": me["draws_available_premium"],
 
-						"checked_today":            me["checked_today"],
+						"checked_today": me["checked_today"],
 
-						"streak":                   me["streak"],
+						"streak": me["streak"],
 
 						"draws_exchange_available": me["draws_exchange_available"],
-
 					}
 
 				}
@@ -120,8 +109,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 	}
 
-
-
 	// 2) free draws
 
 	freeN := int(asFloat(me["draws_available"]))
@@ -135,6 +122,8 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 	}
 
 	drawn := 0
+	freeEdge := loadRiskEdge(st, "risk.obs.free_draw")
+	maxDraw = freeDrawLimit(freeEdge, drawVersion, maxDraw, int(slotNum(lcfg, "draw_min_samples", 20)))
 
 	if flagOn(values, "lottery.auto_draw_free", asBool(lcfg["auto_draw_free"], true)) && freeN > 0 {
 
@@ -160,13 +149,13 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 			}
 
-			delta := asFloat(firstNonNil(raw["delta_lobster"], raw["net_lobster"], raw["delta"], raw["reward_lobster"], raw["prize_lobster"]))
+			delta := drawNetDelta(raw)
 
 			win := asBool(raw["win"], delta > 0)
 
 			if edgeHistoryOn(values) {
 
-				recordTraceSample(st, "risk.obs.free_draw", "free_draw", delta, win, map[string]any{"source": "self_exec", "premium": false})
+				recordTraceSample(st, "risk.obs.free_draw", "free_draw", delta, win, map[string]any{"source": "self_exec", "premium": false, "version": drawVersion, "used_free": firstNonNil(raw["used_free"], true), "gross_lobster": firstNonNil(raw["win_lobster"], raw["reward_lobster"], raw["prize_lobster"]), "entry_fee": raw["entry_fee"], "tax_lobster": raw["tax_lobster"]})
 
 			}
 
@@ -181,8 +170,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 		actions = append(actions, map[string]any{"status": "skip", "action": "draw", "reason": fmt.Sprintf("free_draws=%d", freeN)})
 
 	}
-
-
 
 	// 3) free premium draws
 
@@ -203,6 +190,8 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 	}
 
 	premDrawn := 0
+	premiumEdge := loadRiskEdge(st, "risk.obs.free_draw_premium")
+	maxPrem = freeDrawLimit(premiumEdge, premiumVersion, maxPrem, int(slotNum(lcfg, "draw_min_samples", 20)))
 
 	if flagOn(values, "lottery.auto_draw_premium_free", asBool(lcfg["auto_draw_premium_free"], true)) && premN > 0 {
 
@@ -228,13 +217,13 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 			}
 
-			delta := asFloat(firstNonNil(raw["delta_lobster"], raw["net_lobster"], raw["delta"], raw["reward_lobster"], raw["prize_lobster"]))
+			delta := drawNetDelta(raw)
 
 			win := asBool(raw["win"], delta > 0)
 
 			if edgeHistoryOn(values) {
 
-				recordTraceSample(st, "risk.obs.free_draw_premium", "free_draw_premium", delta, win, map[string]any{"source": "self_exec", "premium": true})
+				premiumEdge = recordTraceSample(st, "risk.obs.free_draw_premium", "free_draw_premium", delta, win, map[string]any{"source": "self_exec", "premium": true, "version": premiumVersion, "used_free": firstNonNil(raw["used_free"], true), "gross_lobster": firstNonNil(raw["win_lobster"], raw["reward_lobster"], raw["prize_lobster"]), "entry_fee": raw["entry_fee"], "tax_lobster": raw["tax_lobster"]})
 
 			}
 
@@ -250,9 +239,42 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 	}
 
+	// 4) paid premium draw: explicit switch + current-version confidence lower bound.
+	entryFee := asFloat(asMap(me["premium"])["entry_fee"])
+	paidDecision := paidPremiumDecision(premiumEdge, premiumVersion, entryFee, lcfg)
+	analysis["paid_premium"] = paidDecision
+	paidMax := int(slotNum(lcfg, "paid_premium_max_per_cycle", 1))
+	if paidMax < 0 {
+		paidMax = 0
+	}
+	if paidMax > 3 {
+		paidMax = 3
+	}
+	balance := asFloat(me["remaining_lobster"])
+	maxBalancePct := slotNum(lcfg, "paid_premium_max_balance_pct", 0.005)
+	budgetOK := entryFee > 0 && balance >= entryFee && entryFee <= balance*maxBalancePct
+	if flagOn(values, "lottery.auto_draw_premium_paid", asBool(lcfg["auto_draw_premium_paid"], false)) && asBool(paidDecision["ready"], false) && budgetOK {
+		for i := 0; i < paidMax; i++ {
+			raw, err := c.LotteryDraw(true)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("draw_premium_paid: %v", err))
+				break
+			}
+			delta := drawNetDelta(raw)
+			win := asBool(raw["win"], delta > 0)
+			if edgeHistoryOn(values) {
+				gross := asFloat(firstNonNil(raw["win_lobster"], delta+entryFee))
+				premiumEdge = recordTraceSample(st, "risk.obs.free_draw_premium", "free_draw_premium", gross, win, map[string]any{"source": "self_exec_paid", "premium": true, "version": premiumVersion, "used_free": false, "net_lobster": delta, "gross_lobster": gross, "entry_fee": firstNonNil(raw["entry_fee"], entryFee), "tax_lobster": raw["tax_lobster"]})
+			}
+			balance = asFloat(firstNonNil(raw["after_lobster"], balance+delta))
+			actions = append(actions, map[string]any{"status": "ok", "action": "draw_premium_paid", "delta": delta, "win": win, "after": balance, "decision": paidDecision})
+			break
+		}
+	} else {
+		actions = append(actions, map[string]any{"status": "skip", "action": "draw_premium_paid", "reason": paidDecision["reason"], "budget_ok": budgetOK, "decision": paidDecision})
+	}
 
-
-	// 4) high variance remains gated: report only, no blind paid spins
+	// 5) other high variance actions remain gated.
 
 	// Enrich with verified-read endpoints from Task2 probe.
 
@@ -371,10 +393,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 		"has_room": vipCtx["has_room"], "has_active_round": vipCtx["has_active_round"],
 
 		"context_label": vipCtx["context_label"], "bet_path_available": vipCtx["bet_path_available"],
-
 	})
-
-
 
 	// Plan B slot/nailong: analyze config RTP + samples; auto-spin only with proven edge.
 
@@ -451,7 +470,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 					"delta": delta, "win": win, "dice": raw["dice"], "after": bal,
 
 					"samples": yoloEdge["samples"], "edge": yoloEdge,
-
 				})
 
 			}
@@ -463,8 +481,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 		actions = append(actions, map[string]any{"status": "analyze_only", "action": "yolo", "reason": "high_variance_default_off", "edge": yoloEdge})
 
 	}
-
-
 
 	// Live-proven nested VIP write paths (from official page JS + HTTP probe):
 
@@ -480,27 +496,24 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 		"room_detail": true,
 
-		"join":        true,
+		"join": true,
 
-		"ready":       true,
+		"ready": true,
 
-		"start":       true,
+		"start": true,
 
-		"leave":       true,
+		"leave": true,
 
-		"bet":         true,
+		"bet": true,
 
-		"create":      true,
+		"create": true,
 
-		"note":        "嵌套写路径已实战确认；正式入座受 min_balance 门槛",
-
+		"note": "嵌套写路径已实战确认；正式入座受 min_balance 门槛",
 	}
 
 	vipBetEdge := applyEdgeGate(values, evaluateVipBetEdge(st, lcfg, vipState, vipCtx))
 
 	analysis["vip_bet_edge"] = vipBetEdge
-
-
 
 	autoVip := flagOn(values, "lottery.auto_vip", asBool(lcfg["auto_vip"], false))
 
@@ -524,9 +537,9 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 			"优先底注可负担",
 			"同条件优先空位多、更新时间新",
 		},
-		"selected_source": firstNonNil(asMap(selected)["_source"], "none"),
+		"selected_source":   firstNonNil(asMap(selected)["_source"], "none"),
 		"selected_strategy": firstNonNil(asMap(selected)["_strategy"], "none"),
-		"note": "无手动选房时自动排序；正式进房仍受 auto_vip 开关、余额门槛与方案B门控",
+		"note":              "无手动选房时自动排序；正式进房仍受 auto_vip 开关、余额门槛与方案B门控",
 	}
 	if st != nil {
 
@@ -544,8 +557,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 	}
 
-
-
 	if autoVip {
 
 		if !asBool(vipState["can_enter"], false) && !allowSpectator {
@@ -555,7 +566,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 				"status": "skip", "action": "vip_join", "reason": "vip_balance_or_gate_not_met",
 
 				"detail": vipBetEdge["message"], "edge": vipBetEdge, "context": vipCtx, "selected": selected,
-
 			})
 
 		} else if selected == nil || firstNonNil(selected["id"], selected["room_id"]) == nil {
@@ -565,7 +575,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 				"status": "skip", "action": "vip_join", "reason": "vip_no_suitable_room",
 
 				"detail": "无可自动加入的公开房间", "edge": vipBetEdge, "context": vipCtx,
-
 			})
 
 		} else {
@@ -587,7 +596,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 				})
 			} else if raw, err := c.LotteryVipJoin(rid, asSpec, joinPwd); err != nil {
 
-
 				errors = append(errors, fmt.Sprintf("vip_join: %v", err))
 
 				actions = append(actions, map[string]any{
@@ -595,7 +603,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 					"status": "error", "action": "vip_join", "reason": err.Error(),
 
 					"room_id": rid, "as_spectator": asSpec, "edge": vipBetEdge, "selected": selected,
-
 				})
 
 			} else {
@@ -606,8 +613,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 					"detail": map[string]any{"me_is_spectator": raw["me_is_spectator"], "room": raw["room"]},
 
-					"edge":   vipBetEdge, "selected": selected,
-
+					"edge": vipBetEdge, "selected": selected,
 				})
 
 				if det, err2 := c.LotteryVipRoom(rid); err2 == nil {
@@ -647,12 +653,9 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 			"status": "analyze_only", "action": "vip_join", "reason": "high_variance_default_off",
 
 			"detail": "进VIP开关关闭；真实路径 /vip/rooms/{id}/join 已确认", "edge": vipBetEdge, "selected": selected, "context": vipCtx,
-
 		})
 
 	}
-
-
 
 	if autoVipBet {
 
@@ -664,8 +667,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 				"detail": "正式入座/下注需要余额达到贵宾厅门槛；观战不能下注",
 
-				"edge":   vipBetEdge, "context": vipCtx, "selected": selected, "executable": false,
-
+				"edge": vipBetEdge, "context": vipCtx, "selected": selected, "executable": false,
 			})
 
 		} else if !asBool(vipBetEdge["edge_ok"], false) {
@@ -693,7 +695,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 				"status": "skip", "action": "vip_bet", "reason": reason,
 
 				"detail": vipBetEdge["message"], "edge": vipBetEdge, "context": vipCtx, "selected": selected, "executable": false,
-
 			})
 
 		} else {
@@ -728,8 +729,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 					"detail": "真实下注路径 /vip/rounds/{id}/bet 已确认，但当前无活跃回合",
 
-					"edge":   vipBetEdge, "context": vipCtx, "selected": selected,
-
+					"edge": vipBetEdge, "context": vipCtx, "selected": selected,
 				})
 
 			} else {
@@ -753,7 +753,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 						"status": "error", "action": "vip_bet", "reason": err.Error(),
 
 						"round_id": roundID, "bet_multiplier": mult, "edge": vipBetEdge,
-
 					})
 
 				} else {
@@ -775,7 +774,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 						"status": "ok", "action": "vip_bet", "round_id": roundID, "bet_multiplier": mult,
 
 						"raw": raw, "edge": vipBetEdge,
-
 					})
 
 				}
@@ -793,12 +791,9 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 			"detail": "VIP下注开关关闭；真实路径 /vip/rounds/{id}/bet 已确认", "edge": vipBetEdge, "context": vipCtx, "selected": selected,
 
 			"executable": false, "write_path_available": true,
-
 		})
 
 	}
-
-
 
 	borrowEdge := applyEdgeGate(values, evaluateBorrowEdge(st, lcfg, loanOffers))
 
@@ -867,7 +862,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 						"amount": amt, "source": src, "raw": raw,
 
 						"samples": borrowEdge["samples"], "edge": borrowEdge,
-
 					})
 
 				}
@@ -881,8 +875,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 		actions = append(actions, map[string]any{"status": "analyze_only", "action": "borrow", "reason": "default_no_auto_borrow", "edge": borrowEdge})
 
 	}
-
-
 
 	analysis["loan_offers"] = loanOffers
 
@@ -947,7 +939,6 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 		"farm_harvest": "risk.obs.farm_harvest",
 
 		"farm_steal": "risk.obs.farm_steal",
-
 	}
 
 	analysis["path_notes"] = []string{
@@ -959,10 +950,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 		"offers: POST /offers 创建; DELETE /offers/mine 取消挂单",
 
 		"vip nested writes: /vip/rooms/{id}/join|ready|start|leave + /vip/rounds/{id}/bet (flat /vip/join|/vip/bet=404)",
-
 	}
-
-
 
 	// refresh me after draws
 
@@ -972,23 +960,20 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 		analysis["me"] = map[string]any{
 
-			"remaining_lobster":        me["remaining_lobster"],
+			"remaining_lobster": me["remaining_lobster"],
 
-			"draws_available":          me["draws_available"],
+			"draws_available": me["draws_available"],
 
-			"draws_available_premium":  me["draws_available_premium"],
+			"draws_available_premium": me["draws_available_premium"],
 
-			"checked_today":            me["checked_today"],
+			"checked_today": me["checked_today"],
 
-			"streak":                   me["streak"],
+			"streak": me["streak"],
 
 			"draws_exchange_available": me["draws_exchange_available"],
-
 		}
 
 	}
-
-
 
 	status := "ok"
 
@@ -1000,37 +985,34 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 	return result("lottery", "lottery", status, actions, analysis, errors, nil, map[string]any{
 
-		"free_draws":    int(asFloat(me["draws_available"])),
+		"free_draws": int(asFloat(me["draws_available"])),
 
-		"premium_free":  int(asFloat(me["draws_available_premium"])),
+		"premium_free": int(asFloat(me["draws_available_premium"])),
 
 		"checked_today": me["checked_today"],
 
-		"drawn":         drawn,
+		"drawn": drawn,
 
 		"premium_drawn": premDrawn,
 
-		"balance":       firstNonNil(me["remaining_lobster"], me["balance"]),
+		"balance": firstNonNil(me["remaining_lobster"], me["balance"]),
 
-		"slot_edge":     analysis["slot_edge"],
+		"slot_edge": analysis["slot_edge"],
 
-		"yolo_edge":     analysis["yolo_edge"],
+		"yolo_edge": analysis["yolo_edge"],
 
-		"vip_bet_edge":  analysis["vip_bet_edge"],
+		"vip_bet_edge": analysis["vip_bet_edge"],
 
-		"vip_manual":    analysis["vip_manual"],
+		"vip_manual": analysis["vip_manual"],
 
-		"vip_observe":   analysis["vip_observe"],
+		"vip_observe": analysis["vip_observe"],
 
-		"borrow_edge":   analysis["borrow_edge"],
+		"borrow_edge": analysis["borrow_edge"],
 
-		"impl":          "go",
-
+		"impl": "go",
 	})
 
 }
-
-
 
 // buildVipContext merges VIP readonly probes into a Chinese-friendly context map.
 
@@ -1046,8 +1028,6 @@ func buildVipContext(state, myRoom, stats, history map[string]any) map[string]an
 
 	history = asMap(history)
 
-
-
 	canEnter := asBool(state["can_enter"], false)
 
 	minBal := asFloat(state["min_balance"])
@@ -1057,8 +1037,6 @@ func buildVipContext(state, myRoom, stats, history map[string]any) map[string]an
 	rooms := asSlice(firstNonNil(state["rooms"], state["public_rooms"], state["list"]))
 
 	publicN := len(rooms)
-
-
 
 	roomID := firstNonNil(myRoom["room_id"], myRoom["id"], myRoom["roomId"])
 
@@ -1098,8 +1076,6 @@ func buildVipContext(state, myRoom, stats, history map[string]any) map[string]an
 
 	}
 
-
-
 	// Round comes from GET /vip/rooms/{id}.round; also infer from room status when needed.
 
 	hasRound := false
@@ -1115,8 +1091,6 @@ func buildVipContext(state, myRoom, stats, history map[string]any) map[string]an
 	histItems := asSlice(firstNonNil(history["items"], history["data"], history["history"]))
 
 	totalRounds := int(asFloat(firstNonNil(stats["total_rounds"], stats["rounds"])))
-
-
 
 	label := "未探测"
 
@@ -1172,91 +1146,82 @@ func buildVipContext(state, myRoom, stats, history map[string]any) map[string]an
 
 	}
 
-
-
 	return map[string]any{
 
-		"ts":                 now(),
+		"ts": now(),
 
-		"state_ok":           len(state) > 0,
+		"state_ok": len(state) > 0,
 
-		"state":              state,
+		"state": state,
 
-		"my_room":            myRoom,
+		"my_room": myRoom,
 
-		"stats":              stats,
+		"stats": stats,
 
-		"history_count":      len(histItems),
+		"history_count": len(histItems),
 
-		"total_rounds":       totalRounds,
+		"total_rounds": totalRounds,
 
-		"can_enter":          canEnter,
+		"can_enter": canEnter,
 
-		"min_balance":        minBal,
+		"min_balance": minBal,
 
-		"balance_lobster":    bal,
+		"balance_lobster": bal,
 
-		"public_room_count":  publicN,
+		"public_room_count": publicN,
 
-		"room_id":            roomID,
+		"room_id": roomID,
 
-		"room_status":        roomStatus,
+		"room_status": roomStatus,
 
-		"has_room":           hasRoom,
+		"has_room": hasRoom,
 
-		"has_active_round":   hasRound,
+		"has_active_round": hasRound,
 
-		"bet_path_available":  true,
+		"bet_path_available": true,
 
 		"join_path_available": true,
 
 		"write_paths": map[string]any{
 
-			"join":  true,
+			"join": true,
 
 			"ready": true,
 
 			"start": true,
 
-			"bet":   true,
+			"bet": true,
 
 			"leave": true,
 
-			"note":  "嵌套写路径已实战确认；正式入座受 min_balance",
-
+			"note": "嵌套写路径已实战确认；正式入座受 min_balance",
 		},
 
-		"context_label":   label,
+		"context_label": label,
 
 		"context_summary": summary,
 
 		"probe": map[string]any{
 
-			"state":   len(state) > 0,
+			"state": len(state) > 0,
 
 			"my_room": len(myRoom) > 0,
 
-			"stats":   len(stats) > 0,
+			"stats": len(stats) > 0,
 
 			"history": len(history) > 0,
 
-			"rooms":   false,
+			"rooms": false,
 
-			"rounds":  false,
+			"rounds": false,
 
-			"bet":     false,
+			"bet": false,
 
-			"join":    false,
-
+			"join": false,
 		},
-
 	}
 
 }
-
-
-
-
 
 // recordVipManualActivity diffs readonly VIP probes against previous local snapshot.
 
@@ -1284,8 +1249,6 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 
 	events := asSlice(prev["events"])
 
-
-
 	roomID := firstNonNil(ctx["room_id"], asMap(ctx["my_room"])["room_id"])
 
 	prevRoom := firstNonNil(prevSnap["room_id"])
@@ -1293,8 +1256,6 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 	hasRoom := roomID != nil && fmt.Sprint(roomID) != "" && fmt.Sprint(roomID) != "<nil>" && fmt.Sprint(roomID) != "null" && fmt.Sprint(roomID) != "0"
 
 	prevHas := prevRoom != nil && fmt.Sprint(prevRoom) != "" && fmt.Sprint(prevRoom) != "<nil>" && fmt.Sprint(prevRoom) != "null" && fmt.Sprint(prevRoom) != "0"
-
-
 
 	ts := now()
 
@@ -1311,7 +1272,6 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 			"title": "检测到进房", "detail": fmt.Sprintf("房间 %v · 状态 %v", roomID, ctx["room_status"]),
 
 			"room_id": roomID, "room_status": ctx["room_status"],
-
 		})
 
 	} else if !hasRoom && prevHas {
@@ -1323,7 +1283,6 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 			"title": "检测到离房", "detail": fmt.Sprintf("离开房间 %v", prevRoom),
 
 			"room_id": prevRoom,
-
 		})
 
 	} else if hasRoom && prevHas && fmt.Sprint(roomID) != fmt.Sprint(prevRoom) {
@@ -1335,12 +1294,9 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 			"title": "检测到换房", "detail": fmt.Sprintf("%v -> %v", prevRoom, roomID),
 
 			"from": prevRoom, "to": roomID,
-
 		})
 
 	}
-
-
 
 	// stats deltas
 
@@ -1371,7 +1327,6 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 				"title": "检测到对局进度", "detail": fmt.Sprintf("总局数 %d -> %d", prevRounds, curRounds),
 
 				"from": prevRounds, "to": curRounds,
-
 			})
 
 		}
@@ -1385,7 +1340,6 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 				"title": "检测到胜负变化", "detail": fmt.Sprintf("胜 %d->%d · 负 %d->%d", prevWins, curWins, prevLosses, curLosses),
 
 				"wins": curWins, "losses": curLosses,
-
 			})
 
 		}
@@ -1399,14 +1353,11 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 				"title": "检测到VIP净龙虾变化", "detail": fmt.Sprintf("%.0f -> %.0f (Δ%.0f)", prevNet, curNet, curNet-prevNet),
 
 				"from": prevNet, "to": curNet, "delta": curNet - prevNet,
-
 			})
 
 		}
 
 	}
-
-
 
 	// history item fingerprints
 
@@ -1457,7 +1408,6 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 				"ts": ts, "source": "web_manual_or_external", "kind": "history_item",
 
 				"title": title, "detail": detail, "item": m,
-
 			})
 
 		}
@@ -1465,8 +1415,6 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 	}
 
 	_ = added
-
-
 
 	// prepend new events
 
@@ -1492,48 +1440,46 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 
 	out := map[string]any{
 
-		"ts":             ts,
+		"ts": ts,
 
-		"watch_only":     true,
+		"watch_only": true,
 
-		"bot_can_write":  false,
+		"bot_can_write": false,
 
-		"note":           "bot不自动VIP写操作；网页手动进房/对局通过只读接口差分记录到本地",
+		"note": "bot不自动VIP写操作；网页手动进房/对局通过只读接口差分记录到本地",
 
-		"events":         events,
+		"events": events,
 
-		"latest":         latest,
+		"latest": latest,
 
-		"event_count":    len(events),
+		"event_count": len(events),
 
 		"new_event_count": len(newEvents),
 
 		"snapshot": map[string]any{
 
-			"room_id":       roomID,
+			"room_id": roomID,
 
-			"room_status":   ctx["room_status"],
+			"room_status": ctx["room_status"],
 
-			"has_room":      hasRoom,
+			"has_room": hasRoom,
 
-			"total_rounds":  curRounds,
+			"total_rounds": curRounds,
 
-			"wins":          curWins,
+			"wins": curWins,
 
-			"losses":        curLosses,
+			"losses": curLosses,
 
-			"net_lobster":   curNet,
+			"net_lobster": curNet,
 
-			"history_keys":  curKeys,
+			"history_keys": curKeys,
 
 			"history_count": len(histItems),
 
-			"can_enter":     ctx["can_enter"],
+			"can_enter": ctx["can_enter"],
 
-			"balance":       ctx["balance_lobster"],
-
+			"balance": ctx["balance_lobster"],
 		},
-
 	}
 
 	if st != nil {
@@ -1585,12 +1531,6 @@ func recordVipManualActivity(st *storage.Storage, ctx, stats, history map[string
 	return out
 
 }
-
-
-
-
-
-
 
 // pickVipRoom prefers panel manual room preference, otherwise auto-selects a public room.
 
@@ -1815,10 +1755,6 @@ func pickVipRoom(st *storage.Storage, state, ctx map[string]any, balance float64
 
 }
 
-
-
-
-
 // recordVipSpectatorSamples collects observational VIP samples while spectating/watching.
 
 // No bets are placed. Stored under risk.edge.vip_obs, separate from personal vip_bet samples.
@@ -1872,8 +1808,6 @@ func recordVipSpectatorSamples(st *storage.Storage, c *client.Client, ctx, stats
 	newN := 0
 
 	ts := now()
-
-
 
 	rid := firstNonNil(ctx["room_id"], asMap(ctx["selected_room"])["id"], asMap(ctx["selected_room"])["room_id"])
 
@@ -1949,8 +1883,6 @@ func recordVipSpectatorSamples(st *storage.Storage, c *client.Client, ctx, stats
 
 	}
 
-
-
 	for _, it := range asSlice(firstNonNil(history["items"], history["data"], history["history"])) {
 
 		m := asMap(it)
@@ -1986,8 +1918,6 @@ func recordVipSpectatorSamples(st *storage.Storage, c *client.Client, ctx, stats
 		hist = append([]any{item}, hist...)
 
 	}
-
-
 
 	if newN == 0 && len(stats) > 0 {
 
@@ -2031,8 +1961,6 @@ func recordVipSpectatorSamples(st *storage.Storage, c *client.Client, ctx, stats
 
 	}
 
-
-
 	if len(hist) > 30 {
 
 		hist = hist[:30]
@@ -2075,44 +2003,42 @@ func recordVipSpectatorSamples(st *storage.Storage, c *client.Client, ctx, stats
 
 	edge := map[string]any{
 
-		"ts":          ts,
+		"ts": ts,
 
-		"kind":        "vip_obs",
+		"kind": "vip_obs",
 
-		"source":      "spectator_observe",
+		"source": "spectator_observe",
 
-		"samples":     samples,
+		"samples": samples,
 
-		"wins":        wins,
+		"wins": wins,
 
-		"sum_delta":   sumDelta,
+		"sum_delta": sumDelta,
 
-		"history":     hist,
+		"history": hist,
 
-		"seen_keys":   seenKeys,
+		"seen_keys": seenKeys,
 
 		"new_samples": newN,
 
-		"obs_ev":      obsEV,
+		"obs_ev": obsEV,
 
-		"win_rate":    winRate,
+		"win_rate": winRate,
 
-		"message":     msg,
+		"message": msg,
 
 		"stats_snap": map[string]any{
 
 			"total_rounds": int(asFloat(firstNonNil(stats["total_rounds"], stats["rounds"]))),
 
-			"net_lobster":  asFloat(stats["net_lobster"]),
+			"net_lobster": asFloat(stats["net_lobster"]),
 
-			"wins":         stats["wins"],
+			"wins": stats["wins"],
 
-			"losses":       stats["losses"],
-
+			"losses": stats["losses"],
 		},
 
 		"enabled": true,
-
 	}
 
 	if st != nil {
@@ -2124,6 +2050,3 @@ func recordVipSpectatorSamples(st *storage.Storage, c *client.Client, ctx, stats
 	return edge
 
 }
-
-
-
