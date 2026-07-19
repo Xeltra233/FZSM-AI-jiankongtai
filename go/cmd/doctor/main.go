@@ -188,7 +188,7 @@ func main() {
                         }
                 }
                 fmt.Println("\nRepair hints:")
-                fmt.Println(" - cookie ??: python -m src.auth_helper login")
+                fmt.Println(" - Cookie 登录：在 Dashboard 控制页导入并探测 fz_lottery")
                 fmt.Println(" - Go bot: bin\\fzsm-bot.exe -c config/config.yaml --once")
                 fmt.Println(" - Go dashboard: bin\\fzsm-dashboard.exe -c config/config.yaml -port 8787")
                 if *jsonOut {
@@ -206,21 +206,21 @@ func main() {
 
 func printMap() {
         rows := [][]string{
-                {"active", "/stocks", "spot,trader,strategy", "????"},
-                {"active", "/farm", "farm", "??"},
-                {"active", "/lottery/page", "lottery", "??/???/VIP"},
-                {"active", "/invest|/bet|/funds", "side_hustle", "IPO/??/??"},
-                {"active", "/broker", "brokers", "??"},
-                {"active", "/futures|/margin", "derivatives", "??/???"},
-                {"active", "events/news", "calendar", "??/????"},
-                {"active", "/leaderboard", "leaderboard", "???"},
-                {"active", "/honors", "honors", "??"},
-                {"active", "/meeting", "meeting", "??"},
-                {"active", "/governance", "governance", "??"},
-                {"probe_only", "/admin", "admin", "????"},
-                {"active", "dashboard funds", "funds_breakdown,llm_usage", "????"},
-                {"active", "auth keepalive", "keepalive", "cookie??"},
-                {"active", "feature flags", "flags", "????"},
+                {"active", "/stocks", "spot,trader,strategy", "行情交易"},
+                {"active", "/farm", "farm", "农场"},
+                {"active", "/lottery/page", "lottery", "签到/抽奖/VIP"},
+                {"active", "/invest|/bet|/funds", "side_hustle", "IPO/对赌/基金"},
+                {"active", "/broker", "brokers", "券商"},
+                {"active", "/futures|/margin", "derivatives", "期货/保证金"},
+                {"active", "events/news", "calendar", "日历/事件偏置"},
+                {"active", "/leaderboard", "leaderboard", "排行榜"},
+                {"active", "/honors", "honors", "荣誉"},
+                {"active", "/meeting", "meeting", "股东大会"},
+                {"active", "/governance", "governance", "公司治理"},
+                {"probe_only", "/admin", "admin", "管理探测"},
+                {"active", "dashboard funds", "funds_breakdown,llm_usage", "资金统计"},
+                {"active", "auth keepalive", "keepalive", "Cookie 保活"},
+                {"active", "feature flags", "flags", "功能开关"},
         }
         fmt.Printf("%-12s %-28s %-28s %s\n", "status", "route", "local", "title")
         fmt.Println(strings.Repeat("-", 100))

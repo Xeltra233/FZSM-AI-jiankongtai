@@ -3,27 +3,27 @@ api_base: "https://fanzisima.xyz/stocks/api"
 cookie_file: "auth/cookies.json"
 browser_profile_dir: "auth/browser-profile"
 
-# cookie ??????????????????
+# Cookie 自动保活与登录态探测。
 auth:
   keepalive_enabled: true
   keepalive_every_cycles: 3
   probe_lottery: true
 
 
-# LLM / API ?????????????????
-# SillyTavern: https://api.fanzisima.xyz/v1  ??? /v1?
-# CherryStudio / RikkaHub: https://api.fanzisima.xyz ????? /v1?
+# LLM / API 用量跟踪；密钥只从环境变量读取。
+# SillyTavern 使用 https://api.fanzisima.xyz/v1。
+# CherryStudio / RikkaHub 可按客户端要求选择带或不带 /v1 的地址。
 llm:
   track_enabled: true
   base_url: "https://api.fanzisima.xyz/v1"
   base_url_alt: "https://api.fanzisima.xyz"
   api_key_env: "FZSM_LLM_API_KEY"
-  # ?????? key?????????????
+  # 不要把 API key 明文写进配置文件。
   # api_key: ""
   price_input_per_1m: 0
   price_output_per_1m: 0
   currency: "CNY"
-# paper = ???  live = ??
+# paper = 模拟执行；live = 真实执行。
 mode: live
 
 loop:
@@ -41,7 +41,7 @@ universe:
   min_price: 0.01
 
 strategy:
-  # balanced = ??: ??????, ???, ??
+  # balanced = 均衡：保留常规现金缓冲、仓位与开仓节奏。
   profile: balanced
   ema_fast: 9
   ema_slow: 21

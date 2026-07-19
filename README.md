@@ -133,7 +133,7 @@ fz_lottery=完整值
 - `auth/cookies.json` 是密钥材料，不要提交到 git
 - 更细说明见：`docs/COOKIE_MANAGEMENT.md`
 
-- ??????`docs/COOKIE_MANAGEMENT.md`
+- 更细的 Cookie 安全与轮换说明见 `docs/COOKIE_MANAGEMENT.md`
 
 ### Cookie 保活怎么处理（解决方案）
 
@@ -236,6 +236,16 @@ services:
 - `cookie_file: auth/cookies.json`
 - `auth.keepalive_*`
 - `lottery.*` / `farm.*` / `risk.*` / `regime.*`
+
+### 赚钱速度与风险开关
+
+- **全部持仓**：面板选择 `all_in` 后，系统会在可成交、正净期望和组合上限内尽量部署资金。默认保留约 2% 最小现金缓冲；单标的最多占组合 30%，每轮最多新增 3 个机会，单笔不超过 1,000 万。
+- **杠杆**：`derivatives.enabled: true` 负责分析；只有用户显式打开 `derivatives.trade_enabled` 才会新增杠杆仓。最大 3 倍、最多 2 仓，保证金同时受现金和权益各 5% 以及共享资金池约束。
+- **付费高级抽**：`lottery.auto_draw_premium_paid` 默认关闭。只有当前活动版本的真实样本达到门槛，净收益置信下界为正且获得共享预算时才执行。
+- **老虎机/YOLO/VIP 下注**：当前证据为负期望，算法硬阻断或分配零预算；打开 UI 开关也不会绕过净期望门槛。
+- **跨模块资金池**：杠杆、付费高级抽等占现金能力统一按风险调整后的单位时间净收益分配，达到单机会容量后会把剩余预算继续分给其他正期望机会。
+
+完整公式、配置口径、验证结果与回滚方法见 [`docs/PROFIT_OPTIMIZATION.md`](docs/PROFIT_OPTIMIZATION.md)。
 
 ## 面板功能
 
