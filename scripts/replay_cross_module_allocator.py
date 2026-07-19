@@ -16,12 +16,13 @@ def stats(hist):
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument('db'); ap.add_argument('--out'); a=ap.parse_args()
-    c=sqlite3.connect(a.db)
+    db=Path(a.db).resolve()
+    c=sqlite3.connect(f"file:{db.as_posix()}?mode=ro",uri=True)
     last=state(c,'last_loop'); account=last.get('account',{})
     cash=float(account.get('cash',0)); equity=float(account.get('equity',0)); pool=min(cash*.05,equity*.05,10_000_000)
     prem=state(c,'risk.obs.free_draw_premium'); ps=stats(prem.get('history',[])); fee=500_000; premium_net_lcb=ps['lcb']-fee
     slot=state(c,'lottery.slot_edge'); yolo=state(c,'risk.edge.yolo'); deriv=state(c,'risk.edge.derivatives')
-    farm=state(c,'farm'); errs=[str(x) for x in farm.get('errors',[])]; q429=sum('429' in x or '????' in x for x in errs)
+    farm=state(c,'farm'); errs=[str(x) for x in farm.get('errors',[])]; q429=sum('429' in x or '额度' in x for x in errs)
     negative=[]
     if float(slot.get('theory_ev_per_spin',0))<0: negative.append('slot')
     if float(yolo.get('theory_ev',0))<0: negative.append('yolo')
