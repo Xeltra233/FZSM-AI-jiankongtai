@@ -335,125 +335,8 @@ func asSliceMaps(v any) []map[string]any {
 	return out
 }
 
-func runDerivatives(cfg *config.Config, st *storage.Storage, values map[string]any) map[string]any {
-	ds := st.GetStateMap("derivatives")
-	dcfg := map[string]any{}
-	if cfg != nil && cfg.Derivatives != nil {
-		dcfg = cfg.Derivatives
-	}
-	tradeEnabled := flagOn(values, "derivatives.trade_enabled", asBool(dcfg["trade_enabled"], false))
-
-	// Live path inventory (Task4 probe):
-	// GET /futures 200, GET /margin/positions 200,
-	// POST /margin/open exists (403 cooldown/business), POST /margin/close exists (400 need position id)
-	pathNotes := []string{
-		"GET /futures = contracts snapshot",
-		"GET /margin/positions = open margin positions",
-		"POST /margin/open = open leverage/futures (business 403 possible)",
-		"POST /margin/close = close by valid position id",
-		"GET /futures/list|/contracts|/perp = 404",
-	}
-
-	edge := applyEdgeGate(values, evaluateDerivativesEdge(st, dcfg, ds, tradeEnabled))
-	actions := asSliceMaps(ds["actions"])
-	analysis := asMap(ds["analysis"])
-	if len(analysis) == 0 {
-		analysis = map[string]any{}
-	}
-	analysis["path_notes"] = pathNotes
-	analysis["risk_edge"] = edge
-	analysis["live_paths"] = map[string]any{
-		"futures_get":          true,
-		"margin_positions_get": true,
-		"margin_open_post":     true,
-		"margin_close_post":    true,
-		"note":                 "路径已实战确认；当前模块主要消费本地 plan，执行仍受开关/edge/仓位数量门控",
-	}
-
-	best := asMap(analysis["best"])
-	if len(best) == 0 && len(actions) > 0 {
-		best = asMap(actions[0]["futures"])
-		if len(best) == 0 {
-			best = actions[0]
-		}
-	}
-	shares := asFloat(firstNonNil(ds["shares"], best["shares"]))
-	if shares <= 0 && len(actions) > 0 {
-		shares = asFloat(actions[0]["shares"])
-	}
-	cash := asFloat(firstNonNil(ds["cash"], 0))
-	openMargin := asFloat(firstNonNil(ds["open_margin"], 0))
-	gap := []string{}
-	if !tradeEnabled {
-		gap = append(gap, "实盘开关关闭(derivatives.trade_enabled=false)")
-	}
-	if !asBool(edge["edge_ok"], false) {
-		gap = append(gap, "方案B净边未通过")
-	}
-	if shares <= 0 {
-		gap = append(gap, "计划可开数量=0（常见原因：现金不足/保证金预算不足/风控缩仓）")
-	}
-	if cash <= 0 {
-		gap = append(gap, "现金为0，无法承担保证金")
-	}
-	analysis["executable_gap"] = gap
-	analysis["executable"] = tradeEnabled && asBool(edge["edge_ok"], false) && shares > 0
-
-	status := "ok"
-	if len(ds) == 0 {
-		status = "analyze_only"
-		if tradeEnabled {
-			status = "idle"
-		}
-		actions = []map[string]any{{
-			"status": status, "action": "plan", "reason": "derivatives_plan_missing",
-			"detail": "本地无 futures plan；请确认 primary bot 是否写入 derivatives 状态", "edge": edge,
-		}}
-		return result("derivatives", "derivatives", status, actions, map[string]any{
-			"trade_enabled": tradeEnabled, "risk_edge": edge, "path_notes": pathNotes, "executable_gap": gap, "executable": false,
-		}, nil, nil, map[string]any{
-			"trade_enabled": tradeEnabled, "risk_edge": edge, "path_notes": pathNotes,
-		})
-	}
-
-	if !tradeEnabled {
-		status = "analyze_only"
-		actions = append([]map[string]any{{
-			"status": "analyze_only", "action": "margin_order", "reason": "derivatives_trade_disabled_analyze_only",
-			"detail": "期货/保证金实盘开关关闭；路径已确认但不下单", "edge": edge, "gap": gap,
-		}}, actions...)
-	} else if !asBool(edge["edge_ok"], false) {
-		status = "analyze_only"
-		actions = append([]map[string]any{{
-			"status": "skip", "action": "margin_order", "reason": "no_proven_edge",
-			"detail": edge["message"], "edge": edge, "gap": gap,
-		}}, actions...)
-	} else if shares <= 0 {
-		status = "analyze_only"
-		actions = append([]map[string]any{{
-			"status": "skip", "action": "margin_order", "reason": "margin_ev_or_shares_insufficient",
-			"detail": "有正EV计划但可开数量为0；" + strings.Join(gap, "；"), "edge": edge, "gap": gap,
-		}}, actions...)
-	} else {
-		// Real POST /margin/open exists, but Go main cycle still lacks full live order assembly.
-		actions = append([]map[string]any{{
-			"status": "skip", "action": "margin_order", "reason": "execution_not_wired_in_go_cycle",
-			"detail": "真实 POST /margin/open 已确认存在，但本轮 Go 主循环尚未接入完整下单字段装配；为避免误下单，仅标注可执行缺口。",
-			"edge":   edge, "gap": gap, "shares": shares,
-		}}, actions...)
-		status = "analyze_only"
-	}
-
-	return result("derivatives", "derivatives", status, actions, analysis, nil, edge["use_ev"], map[string]any{
-		"trade_enabled":  tradeEnabled,
-		"open_margin":    openMargin,
-		"cash":           cash,
-		"risk_edge":      edge,
-		"path_notes":     pathNotes,
-		"executable":     analysis["executable"],
-		"executable_gap": gap,
-		"impl":           "go",
-	})
+func runDerivatives(cfg *config.Config, st *storage.Storage, c derivativesAPI, values map[string]any, account map[string]any) map[string]any {
+        return executeDerivatives(cfg, st, c, values, account)
 }
 
 func runBrokers(st *storage.Storage, c *client.Client, values map[string]any) map[string]any {
@@ -1289,7 +1172,7 @@ func RunAll(cfg *config.Config, st *storage.Storage, c *client.Client, cycle int
 	results["lottery"] = RunLottery(cfg, st, c, values)
 	results["side_hustle"] = runSide(st, c)
 	results["brokers"] = runBrokers(st, c, values)
-	results["derivatives"] = runDerivatives(cfg, st, values)
+	results["derivatives"] = runDerivatives(cfg, st, c, values, account)
 	results["calendar"] = runCalendar(st, c)
 	results["leaderboard"] = runLeaderboard(st, c, account, userName)
 	results["honors"] = runHonors(st)

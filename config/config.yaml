@@ -219,12 +219,26 @@ derivatives:
   min_interval_sec: 60
   min_score: 0.35
   max_leverage: 3
-  max_notional: 50000
+  max_notional: 5000000
+  max_margin_cash_pct: 0.05
+  max_margin_equity_pct: 0.05
+  min_abs_basis_pct: 0.008
+  min_convergence_capture: 0.20
+  min_time_to_expiry_sec: 300
+  max_time_to_expiry_sec: 21600
+  maintenance_margin_pct: 0.08
+  min_liquidation_buffer_pct: 0.18
+  liquidation_penalty_weight: 0.25
+  slippage_rate: 0.001
   max_new_per_cycle: 1
   max_open_positions: 2
   max_close_per_cycle: 1
   auto_close_loss: true
   close_loss_pct: 0.08
+  close_profit_pct: 0.15
+  close_before_expiry_sec: 180
+  min_margin_ratio: 0.12
+  protective_close_when_disabled: true
   close_any_negative: false
   fee_rate: 0.001
   # Plan B leverage gate
