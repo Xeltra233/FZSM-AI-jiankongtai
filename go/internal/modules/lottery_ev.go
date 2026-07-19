@@ -33,6 +33,9 @@ func slotConfigVersion(slotCfg map[string]any) string {
 	if nested := asMap(slotCfg["data"]); len(nested) > 0 {
 		data = nested
 	}
+	if len(asSlice(data["symbols"])) == 0 || len(asSlice(data["prizes"])) == 0 || len(asMap(data["settings"])) == 0 {
+		return ""
+	}
 	return stableVersion("slot", map[string]any{
 		"symbols": data["symbols"], "prizes": data["prizes"], "settings": data["settings"],
 	})
@@ -134,7 +137,17 @@ func recordVersionedObservation(st *storage.Storage, key string, delta float64, 
 	edge["history"] = history
 	edge["obs_ev"] = sumDelta / float64(samples)
 	edge["win_rate"] = float64(wins) / float64(samples)
-	stats := rollingObservationStats(history, observationHistoryLimit, 1.96)
+	rollingLimit := observationHistoryLimit
+	confidenceZ := 1.96
+	if extra != nil {
+		if n := int(asFloat(extra["rolling_limit"])); n > 0 && n <= observationHistoryLimit {
+			rollingLimit = n
+		}
+		if z := asFloat(extra["confidence_z"]); z > 0 && z <= 5 {
+			confidenceZ = z
+		}
+	}
+	stats := rollingObservationStats(history, rollingLimit, confidenceZ)
 	edge["rolling_samples"] = stats["samples"]
 	edge["rolling_ev"] = stats["mean"]
 	edge["rolling_stddev"] = stats["stddev"]

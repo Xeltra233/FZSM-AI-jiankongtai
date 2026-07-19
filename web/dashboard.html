@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="FZSM AI 股票、资金、风险与赚钱模块监控台" />
   <title>FZSM AI 监控台</title>
   <style>
     :root {
@@ -1285,7 +1286,7 @@
         <button class="tab" data-tab="info" title="9"><span class="ico">🏛️</span><span class="lbl">信息</span></button>
       </nav>
     </aside>
-    <div class="main">
+    <main class="main">
     <header>
       <div class="brand">
         <div class="logo">AI</div>
@@ -1510,7 +1511,7 @@
           </div>
           <div class="card">
             <div class="card-head"><h2>服务状态</h2><div class="hint" id="svcHint">-</div></div>
-            <pre class="logbox" id="serviceBox">???...</pre>
+            <pre class="logbox" id="serviceBox">加载中...</pre>
             <div class="farm-note" style="margin-top:10px">Cookie 保活</div>
             <div class="flag-row" id="authKeepaliveBox"><span class="note">加载中...</span></div>
 
@@ -1617,7 +1618,7 @@
 
 
     </div>
-    </div>
+    </main>
   </div>
   <div class="toast" id="toast"><div class="toast-title" id="toastTitle">提示</div><div class="toast-msg" id="toastMsg">-</div><div class="toast-bar"><i></i></div></div>
   <div class="modal-mask" id="modalMask" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
@@ -2165,7 +2166,7 @@ async function applyControl(mode){
     r = String(r==null?'':r).trim();
     if(!r) return '';
     const map = {
-      '????35%':'风控减仓35%',
+      '风控减仓35%':'风控减仓35%',
       already_checked_or_disabled:'今日已签到',
       empty:'列表为空',
       analyze_only:'分析模式，不下单',
@@ -2937,6 +2938,7 @@ function renderFeatureFlagPanel(d){
       box.innerHTML = [
         flagSwitchHtml('lottery.auto_checkin','签到', flagValue(flags,'lottery.auto_checkin',true),'low'),
         flagSwitchHtml('lottery.auto_draw_free','免费抽', flagValue(flags,'lottery.auto_draw_free',true),'low'),
+        flagSwitchHtml('lottery.auto_draw_premium_paid','付费高级抽', flagValue(flags,'lottery.auto_draw_premium_paid',false),'high'),
         flagSwitchHtml('lottery.auto_yolo','搏一搏', flagValue(flags,'lottery.auto_yolo',false),'high'),
         flagSwitchHtml('lottery.auto_nailong','奶龙机', flagValue(flags,'lottery.auto_nailong',false),'high'),
         flagSwitchHtml('lottery.auto_slot','老虎机', flagValue(flags,'lottery.auto_slot',false),'high'),
@@ -3149,6 +3151,7 @@ function renderEarn(d){
     const yoloEdge = lotA.yolo_edge || lot.yolo_edge || {};
     const vipBetEdge = lotA.vip_bet_edge || lot.vip_bet_edge || {};
     const borrowEdge = lotA.borrow_edge || lot.borrow_edge || {};
+    const paidPremium = lotA.paid_premium || {};
     const lotEdgeGate = lotEdge.gate || (lotEdge.edge_ok ? 'ready' : 'analyze');
     const lotEdgeBadge = lotEdge.edge_ok ? 'ok' : ((lotEdgeGate==='theory_negative' || lotEdgeGate==='no_positive_edge') ? 'warn' : earnBadgeClass(lot.status));
     cards.push(
@@ -3179,10 +3182,12 @@ function renderEarn(d){
       + '<div class="earn-note">VIP执行 · 写路径已确认（/rooms/{id}/join, /rounds/{id}/bet）；正式入座需余额门槛</div>'
       + renderVipRoomPanel(d)
       + '<div class="earn-note">'+escapeHtml(riskEdgeNote(borrowEdge,'借贷'))+'</div>'
+      + '<div class="earn-note">付费高级抽 · '+escapeHtml(paidPremium.ready?'净LCB达标':'保持关闭')+' · 样本 '+escapeHtml(String(paidPremium.samples==null?0:paidPremium.samples))+'/'+escapeHtml(String(paidPremium.min_samples==null?20:paidPremium.min_samples))+' · 净LCB '+escapeHtml(fmtSlotEv(paidPremium.net_lcb))+'</div>'
       + '<div class="flag-row">'
       + flagSwitchHtml('lottery.auto_checkin','签到', flagValue(flags,'lottery.auto_checkin',true), 'low')
       + flagSwitchHtml('lottery.auto_draw_free','免费抽', flagValue(flags,'lottery.auto_draw_free',true), 'low')
       + flagSwitchHtml('lottery.auto_draw_premium_free','高级免费抽', flagValue(flags,'lottery.auto_draw_premium_free',true), 'low')
+      + flagSwitchHtml('lottery.auto_draw_premium_paid','付费高级抽', flagValue(flags,'lottery.auto_draw_premium_paid',false), 'high')
       + flagSwitchHtml('lottery.auto_yolo','搏一搏', flagValue(flags,'lottery.auto_yolo',false), 'high')
       + flagSwitchHtml('lottery.auto_nailong','奶龙机', flagValue(flags,'lottery.auto_nailong',false), 'high')
       + flagSwitchHtml('lottery.auto_slot','老虎机', flagValue(flags,'lottery.auto_slot',false), 'high')
@@ -4623,11 +4628,11 @@ async function refresh(manual=false){
     let liveReason = '';
     if(!liveOk){
       if(svc.status && svc.status!=='running') liveReason = String(svc.status);
-      else if(!authAlive) liveReason = '???';
-      else if(kaLive.ok===false) liveReason = '????';
-      else liveReason = '??';
+      else if(!authAlive) liveReason = '未登录';
+      else if(kaLive.ok===false) liveReason = '保活失败';
+      else liveReason = '离线';
     } else if(kaLive.degraded){
-      liveReason = '????';
+      liveReason = '部分失效';
     }
     setLiveStatus(liveOk, liveReason);
     // only clock; silent auto refresh does not flash extra labels

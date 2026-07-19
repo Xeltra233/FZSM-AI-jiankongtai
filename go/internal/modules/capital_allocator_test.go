@@ -1,8 +1,10 @@
 package modules
 
 import (
-	"fzsmbot/internal/config"
+	"math"
 	"testing"
+
+	"fzsmbot/internal/config"
 )
 
 func TestCapitalAllocatorBlocksNegativeAndBoundsPool(t *testing.T) {
@@ -59,5 +61,16 @@ func TestDerivativePlanRespectsAbsoluteAllocatorCap(t *testing.T) {
 	best, _ := planDerivative(asSliceMaps(positiveFutureGroups()), map[string]any{"cash": 10000000.0, "equity": 10000000.0}, cfg)
 	if best.Margin > 100000.0001 {
 		t.Fatalf("allocator cap exceeded: %+v", best)
+	}
+}
+
+func TestAllocatorRedistributesUnusedShare(t *testing.T) {
+	ops := []capitalOpportunity{
+		{ID: "small", NetEV: 100, Capital: 100, Success: 1, Confidence: 1, DurationHours: 1, Eligible: true},
+		{ID: "large", NetEV: 1000, Capital: 1000, Success: 1, Confidence: 1, DurationHours: 1, Eligible: true},
+	}
+	caps, remaining := allocateOpportunityCaps(ops, 1000)
+	if math.Abs(caps["small"]-100) > 0.001 || math.Abs(caps["large"]-900) > 0.001 || math.Abs(remaining) > 0.001 {
+		t.Fatalf("unused share not redistributed: caps=%+v remaining=%v", caps, remaining)
 	}
 }

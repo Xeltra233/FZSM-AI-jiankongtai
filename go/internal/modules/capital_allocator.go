@@ -69,6 +69,43 @@ func allocatorNum(cfg map[string]any, key string, def float64) float64 {
 	return def
 }
 
+func allocateOpportunityCaps(ops []capitalOpportunity, pool float64) (map[string]float64, float64) {
+	caps := map[string]float64{}
+	remaining := math.Max(0, pool)
+	active := map[int]bool{}
+	for i, o := range ops {
+		if o.Capital > 0 && opportunityScore(o) > 0 {
+			active[i] = true
+		}
+	}
+	for remaining > 0.000001 && len(active) > 0 {
+		activeScore := 0.0
+		for i := range active {
+			activeScore += opportunityScore(ops[i])
+		}
+		if activeScore <= 0 {
+			break
+		}
+		spent := 0.0
+		for i := range active {
+			o := ops[i]
+			need := math.Max(0, o.Capital-caps[o.ID])
+			share := remaining * opportunityScore(o) / activeScore
+			add := math.Min(need, share)
+			caps[o.ID] += add
+			spent += add
+			if need-add <= 0.000001 {
+				delete(active, i)
+			}
+		}
+		if spent <= 0.000001 {
+			break
+		}
+		remaining -= spent
+	}
+	return caps, math.Max(0, remaining)
+}
+
 func buildCapitalAllocator(cfg *config.Config, st *storage.Storage, account map[string]any) map[string]any {
 	cash, equity := asFloat(account["cash"]), asFloat(account["equity"])
 	rcfg := map[string]any{}
@@ -126,24 +163,16 @@ func buildCapitalAllocator(cfg *config.Config, st *storage.Storage, account map[
 		{ID: "lottery_free", NetEV: asFloat(loadRiskEdge(st, "risk.obs.free_draw")["rolling_lcb_ev"]), Capital: 0, Success: 1, Confidence: 1, DurationHours: 1.0 / 60.0, Eligible: true, Reason: "free_ticket"},
 	}
 	sort.SliceStable(ops, func(i, j int) bool { return opportunityScore(ops[i]) > opportunityScore(ops[j]) })
-	totalScore := 0.0
-	for _, o := range ops {
-		if o.Capital > 0 {
-			totalScore += opportunityScore(o)
-		}
-	}
 	allocations := map[string]any{}
+	caps, remaining := allocateOpportunityCaps(ops, pool)
 	ranked := make([]any, 0, len(ops))
 	for rank, o := range ops {
 		score := opportunityScore(o)
-		cap := 0.0
-		if o.Capital > 0 && totalScore > 0 {
-			cap = math.Min(o.Capital, pool*score/totalScore)
-		}
+		cap := caps[o.ID]
 		allocations[o.ID] = map[string]any{"cap": cap, "score": score, "net_ev": o.NetEV, "capital": o.Capital, "success_prob": o.Success, "confidence": o.Confidence, "eligible": o.Eligible, "reason": o.Reason, "rank": rank + 1}
 		ranked = append(ranked, map[string]any{"id": o.ID, "rank": rank + 1, "score": score, "cap": cap, "net_ev": o.NetEV, "capital": o.Capital, "eligible": o.Eligible, "reason": o.Reason})
 	}
-	out := map[string]any{"ts": now(), "cash": cash, "equity": equity, "pool": pool, "allocations": allocations, "ranking": ranked, "formula": "score=(net_ev/capital)/hours*success*confidence; caps share bounded pool", "negative_ev_blocked": true, "execution_degrade": map[string]any{"derivatives": derivDegraded, "derivatives_scale": derivScale}}
+	out := map[string]any{"ts": now(), "cash": cash, "equity": equity, "pool": pool, "allocated": pool - remaining, "unallocated": remaining, "allocations": allocations, "ranking": ranked, "formula": "score=(net_ev/capital)/hours*success*confidence; capped proportional water-filling", "negative_ev_blocked": true, "execution_degrade": map[string]any{"derivatives": derivDegraded, "derivatives_scale": derivScale}}
 	if st != nil {
 		_ = st.SetState("capital.allocator", out)
 	}

@@ -155,7 +155,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 			if edgeHistoryOn(values) {
 
-				recordTraceSample(st, "risk.obs.free_draw", "free_draw", delta, win, map[string]any{"source": "self_exec", "premium": false, "version": drawVersion, "used_free": firstNonNil(raw["used_free"], true), "gross_lobster": firstNonNil(raw["win_lobster"], raw["reward_lobster"], raw["prize_lobster"]), "entry_fee": raw["entry_fee"], "tax_lobster": raw["tax_lobster"]})
+				recordTraceSample(st, "risk.obs.free_draw", "free_draw", delta, win, map[string]any{"source": "self_exec", "premium": false, "version": drawVersion, "rolling_limit": slotNum(lcfg, "draw_rolling_samples", 100), "confidence_z": slotNum(lcfg, "draw_confidence_z", 1.96), "used_free": firstNonNil(raw["used_free"], true), "gross_lobster": firstNonNil(raw["win_lobster"], raw["reward_lobster"], raw["prize_lobster"]), "entry_fee": raw["entry_fee"], "tax_lobster": raw["tax_lobster"]})
 
 			}
 
@@ -223,7 +223,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 
 			if edgeHistoryOn(values) {
 
-				premiumEdge = recordTraceSample(st, "risk.obs.free_draw_premium", "free_draw_premium", delta, win, map[string]any{"source": "self_exec", "premium": true, "version": premiumVersion, "used_free": firstNonNil(raw["used_free"], true), "gross_lobster": firstNonNil(raw["win_lobster"], raw["reward_lobster"], raw["prize_lobster"]), "entry_fee": raw["entry_fee"], "tax_lobster": raw["tax_lobster"]})
+				premiumEdge = recordTraceSample(st, "risk.obs.free_draw_premium", "free_draw_premium", delta, win, map[string]any{"source": "self_exec", "premium": true, "version": premiumVersion, "rolling_limit": slotNum(lcfg, "draw_rolling_samples", 100), "confidence_z": slotNum(lcfg, "draw_confidence_z", 1.96), "used_free": firstNonNil(raw["used_free"], true), "gross_lobster": firstNonNil(raw["win_lobster"], raw["reward_lobster"], raw["prize_lobster"]), "entry_fee": raw["entry_fee"], "tax_lobster": raw["tax_lobster"]})
 
 			}
 
@@ -269,7 +269,7 @@ func RunLottery(cfg *config.Config, st *storage.Storage, c *client.Client, value
 			win := asBool(raw["win"], delta > 0)
 			if edgeHistoryOn(values) {
 				gross := asFloat(firstNonNil(raw["win_lobster"], delta+entryFee))
-				premiumEdge = recordTraceSample(st, "risk.obs.free_draw_premium", "free_draw_premium", gross, win, map[string]any{"source": "self_exec_paid", "premium": true, "version": premiumVersion, "used_free": false, "net_lobster": delta, "gross_lobster": gross, "entry_fee": firstNonNil(raw["entry_fee"], entryFee), "tax_lobster": raw["tax_lobster"]})
+				premiumEdge = recordTraceSample(st, "risk.obs.free_draw_premium", "free_draw_premium", gross, win, map[string]any{"source": "self_exec_paid", "premium": true, "version": premiumVersion, "rolling_limit": slotNum(lcfg, "draw_rolling_samples", 100), "confidence_z": slotNum(lcfg, "draw_confidence_z", 1.96), "used_free": false, "net_lobster": delta, "gross_lobster": gross, "entry_fee": firstNonNil(raw["entry_fee"], entryFee), "tax_lobster": raw["tax_lobster"]})
 			}
 			balance = asFloat(firstNonNil(raw["after_lobster"], balance+delta))
 			recordTraceSample(st, "risk.exec.lottery_paid_premium", "lottery_paid_execution", delta, true, map[string]any{"source": "self_exec"})

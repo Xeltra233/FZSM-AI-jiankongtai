@@ -41,6 +41,17 @@ func TestVersionedObservationArchivesAndResets(t *testing.T) {
 	}
 }
 
+func TestVersionedObservationHonorsRollingConfig(t *testing.T) {
+	st := lotteryTestStorage(t)
+	for _, v := range []float64{10, 20, 100} {
+		recordVersionedObservation(st, "risk.obs.rolling", v, true, map[string]any{"version": "v1", "rolling_limit": 2, "confidence_z": 1.0})
+	}
+	got := loadRiskEdge(st, "risk.obs.rolling")
+	if int(asFloat(got["rolling_samples"])) != 2 || asFloat(got["rolling_ev"]) != 60 {
+		t.Fatalf("rolling config ignored: %+v", got)
+	}
+}
+
 func TestDrawNetDeltaPrefersNet(t *testing.T) {
 	got := drawNetDelta(map[string]any{"net_lobster": 400.0, "delta_lobster": 900.0, "win_lobster": 1000.0})
 	if got != 400 {
@@ -87,5 +98,19 @@ func TestOfficialSlotTheoryAndHardBlock(t *testing.T) {
 	bypass := applyEdgeGate(map[string]any{"risk.edge_gate_enabled": false}, edge)
 	if asBool(bypass["edge_ok"], true) || asBool(bypass["gate_bypassed"], true) {
 		t.Fatalf("hard block bypassed: %+v", bypass)
+	}
+}
+
+func TestSlotVersionMigrationAndTransientMissingConfig(t *testing.T) {
+	st := lotteryTestStorage(t)
+	_ = st.SetState("lottery.slot_edge", map[string]any{"samples": 7, "sum_delta": 70.0, "history": []any{map[string]any{"delta": 10.0}}})
+	valid := updateSlotEdge(st, map[string]any{"slot_min_rtp": 0.0, "slot_min_ev": -1e9}, officialSlotConfig())
+	if int(asFloat(valid["samples"])) != 0 || len(asSlice(valid["previous_versions"])) != 1 {
+		t.Fatalf("legacy samples not isolated on first config version: %+v", valid)
+	}
+	recordSlotSample(st, 123, true)
+	missing := updateSlotEdge(st, nil, map[string]any{})
+	if int(asFloat(missing["samples"])) != 1 || stringValue(missing["version"]) != stringValue(valid["version"]) {
+		t.Fatalf("transient missing config destroyed current samples: %+v", missing)
 	}
 }

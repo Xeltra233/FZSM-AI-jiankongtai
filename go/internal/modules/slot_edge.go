@@ -149,8 +149,11 @@ func saveSlotEdge(st *storage.Storage, edge map[string]any) {
 func updateSlotEdge(st *storage.Storage, lcfg map[string]any, slotCfg map[string]any) map[string]any {
 	prev := loadSlotEdge(st)
 	version := slotConfigVersion(slotCfg)
-	if old := stringValue(prev["version"]); old != "" && old != version {
+	if old := stringValue(prev["version"]); version != "" && old != version && (old != "" || asFloat(prev["samples"]) > 0) {
 		prev = map[string]any{"previous_versions": archiveObservation(prev), "version": version, "version_started_at": now()}
+	}
+	if version == "" {
+		version = stringValue(prev["version"])
 	}
 	theory := computeSlotTheory(slotCfg)
 	minSamples := int(slotNum(lcfg, "slot_min_samples", 30))
