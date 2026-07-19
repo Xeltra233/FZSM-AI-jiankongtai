@@ -40,7 +40,7 @@ func main() {
     "reason": farm["crop_reason"], "steal_left": farm["steal_left"],
   })
   fmt.Println(string(b))
-  lot := modules.RunLottery(cfg, c, map[string]any{})
+  lot := modules.RunLottery(cfg, st, c, map[string]any{})
   b2,_ := json.Marshal(map[string]any{"status": lot["status"], "drawn": lot["drawn"], "actions": lot["actions"], "free": lot["free_draws"], "checked": lot["checked_today"], "impl": lot["impl"]})
   fmt.Println(string(b2))
 }

@@ -4,6 +4,8 @@ auth/cookies.backup.*.json
 auth/browser-profile/
 data/*.db
 data/*.db-*
+*.db
+*.db-*
 data/*.pid
 data/service_state.json
 logs/
@@ -13,6 +15,8 @@ logs/
 
 # dependencies / build artifacts
 node_modules/
+__pycache__/
+*.pyc
 bin/*.exe
 bin/*.exe~
 go/data/

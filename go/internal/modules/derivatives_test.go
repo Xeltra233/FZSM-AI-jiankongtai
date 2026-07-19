@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -9,17 +10,29 @@ import (
 )
 
 type fakeDerivativesAPI struct {
-	groups      []any
-	positions   []any
-	openBodies  []map[string]any
-	closeBodies []map[string]any
+	groups        []any
+	positions     []any
+	openBodies    []map[string]any
+	closeBodies   []map[string]any
+	futuresErr    error
+	positionsErr  error
+	futuresCode   int
+	positionsCode int
 }
 
 func (f *fakeDerivativesAPI) StocksFutures() ([]any, int, error) {
-	return f.groups, 200, nil
+	code := f.futuresCode
+	if code == 0 {
+		code = 200
+	}
+	return f.groups, code, f.futuresErr
 }
 func (f *fakeDerivativesAPI) StocksMarginPositions() ([]any, int, error) {
-	return f.positions, 200, nil
+	code := f.positionsCode
+	if code == 0 {
+		code = 200
+	}
+	return f.positions, code, f.positionsErr
 }
 func (f *fakeDerivativesAPI) StocksMarginOpen(body map[string]any) (map[string]any, error) {
 	f.openBodies = append(f.openBodies, body)
@@ -91,9 +104,20 @@ func TestDerivativeSwitchOnOpensBoundedPlan(t *testing.T) {
 	if len(api.openBodies) != 1 {
 		t.Fatalf("expected one open: out=%+v bodies=%+v", out, api.openBodies)
 	}
+	if asBool(out["executable"], true) {
+		t.Fatalf("submitted order still reported executable: %+v", out)
+	}
 	body := api.openBodies[0]
 	if body["stock_id"] != 101 || body["side"] != "long" || int(asFloat(body["leverage"])) > 3 || int(asFloat(body["shares"])) <= 0 {
 		t.Fatalf("invalid open body: %+v", body)
+	}
+}
+
+func TestDerivativeDoesNotOpenWhenPositionsStateUnavailable(t *testing.T) {
+	api := &fakeDerivativesAPI{groups: positiveFutureGroups(), positionsErr: errors.New("timeout"), positionsCode: 500}
+	executeDerivatives(derivativeTestConfig(), derivativeTestStorage(t), api, map[string]any{"derivatives.trade_enabled": true}, map[string]any{"cash": 100000000.0, "equity": 100000000.0})
+	if len(api.openBodies) != 0 {
+		t.Fatalf("opened with unknown existing exposure: %+v", api.openBodies)
 	}
 }
 

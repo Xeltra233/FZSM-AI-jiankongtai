@@ -7,6 +7,7 @@ import (
         "fzsmbot/internal/storage"
         "fzsmbot/internal/strategy"
         "math"
+        "regexp"
         "strings"
         "time"
 )
@@ -304,30 +305,62 @@ func tradeSucceeded(tr map[string]any) bool {
         }
 }
 
-func firstPositiveInt(m map[string]any, keys ...string) int {
+func firstIntField(m map[string]any, keys ...string) (int, bool) {
         for _, key := range keys {
-                if n := int(asF(m[key])); n > 0 {
-                        return n
+                if raw, ok := m[key]; ok && raw != nil {
+                        n := int(asF(raw))
+                        if n < 0 {
+                                n = 0
+                        }
+                        return n, true
                 }
         }
-        return 0
+        return 0, false
 }
 
 func clampBuyShares(requested int, preview map[string]any) int {
         if requested <= 0 {
                 return 0
         }
-        limit := firstPositiveInt(preview,
+        limit, hasLimit := firstIntField(preview,
                 "max_buy_shares", "buy_limit_remaining", "remaining_buy_shares",
                 "remaining_shares", "max_shares", "order_limit_shares",
         )
-        if quoted := firstPositiveInt(preview, "shares"); quoted > 0 && quoted < requested && (limit == 0 || quoted < limit) {
-                limit = quoted
+        if hasLimit && limit <= 0 {
+                return 0
         }
-        if limit > 0 && requested > limit {
+        if quoted, ok := firstIntField(preview, "shares"); ok && quoted >= 0 && quoted < requested && (!hasLimit || quoted < limit) {
+                limit = quoted
+                hasLimit = true
+        }
+        if hasLimit && requested > limit {
                 return limit
         }
         return requested
+}
+
+var remainingBuySharesRE = regexp.MustCompile(`当前剩余\s*(\d+)\s*股`)
+
+func nextBuySharesAfterLimit(current int, err error, raw map[string]any, factor float64) int {
+        text := fmt.Sprint(raw["raw"])
+        if err != nil {
+                text = err.Error() + " " + text
+        }
+        if match := remainingBuySharesRE.FindStringSubmatch(text); len(match) == 2 {
+                var remaining int
+                _, _ = fmt.Sscanf(match[1], "%d", &remaining)
+                if remaining < current {
+                        return remaining
+                }
+        }
+        if factor <= 0 || factor >= 1 {
+                factor = 0.5
+        }
+        next := int(math.Floor(float64(current) * factor))
+        if next >= current {
+                next = current - 1
+        }
+        return next
 }
 
 func retryableBuyLimit(err error, raw map[string]any) bool {
@@ -726,6 +759,7 @@ func (t *Trader) liveBuy(sig strategy.Signal, shares int, reason string) map[str
         var raw map[string]any
         var err error
         var prev map[string]any
+        previewBlocked := false
         for attempt := 0; attempt <= maxRetries && shares > 0; attempt++ {
                 prev = nil
                 if p, previewErr := t.Client.Preview(sig.StockID, "buy", shares); previewErr == nil {
@@ -733,6 +767,7 @@ func (t *Trader) liveBuy(sig strategy.Signal, shares int, reason string) map[str
                         shares = clampBuyShares(shares, p)
                 }
                 if shares <= 0 {
+                        previewBlocked = true
                         break
                 }
                 raw, err = t.Client.BuyMarket(sig.StockID, shares)
@@ -743,15 +778,7 @@ func (t *Trader) liveBuy(sig strategy.Signal, shares int, reason string) map[str
                 if err == nil || !retryableBuyLimit(err, raw) || shares <= 1 || attempt >= maxRetries {
                         break
                 }
-                factor := t.Risk.CfgF("buy_limit_retry_factor", 0.5)
-                if factor <= 0 || factor >= 1 {
-                        factor = 0.5
-                }
-                next := int(math.Floor(float64(shares) * factor))
-                if next >= shares {
-                        next = shares - 1
-                }
-                shares = next
+                shares = nextBuySharesAfterLimit(shares, err, raw, t.Risk.CfgF("buy_limit_retry_factor", 0.5))
                 if delay := t.Risk.CfgF("buy_limit_retry_delay_ms", 150); delay > 0 {
                         time.Sleep(time.Duration(delay * float64(time.Millisecond)))
                 }
@@ -761,7 +788,10 @@ func (t *Trader) liveBuy(sig strategy.Signal, shares int, reason string) map[str
                 "shares": shares, "price": sig.Price, "status": "submitted", "reason": reason,
                 "raw": map[string]any{"requested_shares": requested, "attempts": attempts, "preview": prev, "result": raw},
         }
-        if err != nil {
+        if previewBlocked {
+                trade["status"] = "rejected"
+                trade["reason"] = "preview_buy_limit_zero"
+        } else if err != nil {
                 trade["status"] = "error"
                 trade["reason"] = err.Error()
                 t.rememberBankruptcyData(err.Error())

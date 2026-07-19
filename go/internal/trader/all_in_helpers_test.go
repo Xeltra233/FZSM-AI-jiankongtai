@@ -16,6 +16,7 @@ func TestClampBuySharesFromPreview(t *testing.T) {
 		{"remaining", map[string]any{"buy_limit_remaining": 37.0}, 37},
 		{"order_limit", map[string]any{"order_limit_shares": 80}, 80},
 		{"quoted", map[string]any{"shares": 25.0}, 25},
+		{"zero_remaining", map[string]any{"buy_limit_remaining": 0.0}, 0},
 		{"unchanged", map[string]any{}, 100},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -23,6 +24,18 @@ func TestClampBuySharesFromPreview(t *testing.T) {
 				t.Fatalf("got %d want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestNextBuySharesUsesServerRemaining(t *testing.T) {
+	if got := nextBuySharesAfterLimit(100, errors.New("买入数量超过上限：当前剩余 2 股，本次想买 100 股"), nil, 0.5); got != 2 {
+		t.Fatalf("got %d want 2", got)
+	}
+	if got := nextBuySharesAfterLimit(100, errors.New("买入数量超过上限：当前剩余 0 股"), nil, 0.5); got != 0 {
+		t.Fatalf("got %d want 0", got)
+	}
+	if got := nextBuySharesAfterLimit(100, errors.New("买入数量超过当前单笔上限"), nil, 0.5); got != 50 {
+		t.Fatalf("got %d want 50", got)
 	}
 }
 

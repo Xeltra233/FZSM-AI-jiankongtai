@@ -5,7 +5,6 @@ import (
         "flag"
         "fmt"
         "os"
-        "path/filepath"
         "strings"
         "time"
 
@@ -48,9 +47,6 @@ func main() {
                 os.Exit(1)
         }
         cookie := cfg.CookieFile
-        if !filepath.IsAbs(cookie) {
-                cookie = cookie
-        }
         add(&checks, "cookie_file", fileExists(cookie), cookie)
 
         names := []string{}

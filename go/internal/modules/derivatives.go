@@ -264,6 +264,8 @@ func executeDerivatives(cfg *config.Config, st *storage.Storage, c derivativesAP
 
 	groups, futuresCode, futuresErr := c.StocksFutures()
 	positions, positionsCode, positionsErr := c.StocksMarginPositions()
+	futuresHealthy := futuresErr == nil && futuresCode < 400
+	positionsHealthy := positionsErr == nil && positionsCode < 400
 	errors := []string{}
 	if futuresErr != nil || futuresCode >= 400 {
 		errors = append(errors, fmt.Sprintf("futures status=%d err=%v", futuresCode, futuresErr))
@@ -331,7 +333,7 @@ func executeDerivatives(cfg *config.Config, st *storage.Storage, c derivativesAP
 	edge := applyEdgeGate(values, evaluateDerivativesEdge(st, dcfg, map[string]any{"analysis": map[string]any{"best": bestMap}}, tradeEnabled))
 	maxOpen := int(dnum(dcfg, "max_open_positions", 2))
 	cooldownOK := now()-lastTradeAt >= minInterval
-	canOpen := tradeEnabled && !writeAction && len(positionMaps) < maxOpen && best.StockID > 0 && best.Shares > 0 && asBool(edge["edge_ok"], false) && cooldownOK
+	canOpen := tradeEnabled && futuresHealthy && positionsHealthy && !writeAction && len(positionMaps) < maxOpen && best.StockID > 0 && best.Shares > 0 && asBool(edge["edge_ok"], false) && cooldownOK
 	if canOpen {
 		body := map[string]any{"stock_id": best.StockID, "side": best.Side, "leverage": best.Leverage, "shares": best.Shares}
 		raw, err := c.StocksMarginOpen(body)
@@ -346,6 +348,8 @@ func executeDerivatives(cfg *config.Config, st *storage.Storage, c derivativesAP
 		}
 	} else if !tradeEnabled {
 		actions = append(actions, map[string]any{"status": "analyze_only", "action": "margin_order", "operation": "open", "reason": "derivatives_trade_disabled", "plan": bestMap})
+	} else if !futuresHealthy || !positionsHealthy {
+		actions = append(actions, map[string]any{"status": "skip", "action": "margin_order", "operation": "open", "reason": "derivatives_state_unavailable", "futures_healthy": futuresHealthy, "positions_healthy": positionsHealthy})
 	} else if len(positionMaps) >= maxOpen {
 		actions = append(actions, map[string]any{"status": "skip", "action": "margin_order", "operation": "open", "reason": "max_open_positions", "open_positions": len(positionMaps)})
 	} else if !cooldownOK {
@@ -357,6 +361,8 @@ func executeDerivatives(cfg *config.Config, st *storage.Storage, c derivativesAP
 	status := "ok"
 	if writeFailed || (len(errors) > 0 && len(contracts) == 0 && len(positionMaps) == 0) {
 		status = "error"
+	} else if writeAction {
+		status = "ok"
 	} else if !tradeEnabled {
 		status = "analyze_only"
 	} else if !writeAction {
@@ -367,13 +373,13 @@ func executeDerivatives(cfg *config.Config, st *storage.Storage, c derivativesAP
 		"positions": positionMaps, "position_count": len(positionMaps), "trade_enabled": tradeEnabled,
 		"cash": cash, "equity": equity, "open_margin": openMargin,
 		"margin_budget": firstNonNil(bestMap["margin"], 0), "risk_edge": edge,
-		"executable": canOpen, "protective_close_when_disabled": protectWhenOff,
+		"plan_executable": canOpen, "executable": canOpen && !writeAction, "protective_close_when_disabled": protectWhenOff,
 		"formula":    "E[move]=abs(basis)*convergence; net=E[move]-2*fee-slippage-liquidation_penalty",
 		"live_paths": map[string]any{"futures_get": true, "margin_positions_get": true, "margin_open_post": true, "margin_close_post": true},
 	}
 	out := result("derivatives", "期货/保证金", status, actions, analysis, errors, firstNonNil(bestMap["net_edge"], nil), map[string]any{
 		"trade_enabled": tradeEnabled, "cash": cash, "equity": equity, "open_margin": openMargin,
-		"margin_budget": analysis["margin_budget"], "risk_edge": edge, "executable": canOpen,
+		"margin_budget": analysis["margin_budget"], "risk_edge": edge, "executable": analysis["executable"],
 		"contracts_count": len(contracts), "position_count": len(positionMaps), "impl": "go",
 	})
 	out["last_trade_at"] = lastTradeAt
