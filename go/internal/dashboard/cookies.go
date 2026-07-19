@@ -90,6 +90,19 @@ func parseCookieItems(raw any) ([]client.CookieItem, error) {
 		if it.Domain == "" || it.Domain == "<nil>" {
 			it.Domain = "fanzisima.xyz"
 		}
+		domain := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(it.Domain)), ".")
+		if domain != "fanzisima.xyz" && !strings.HasSuffix(domain, ".fanzisima.xyz") {
+			return nil, fmt.Errorf("cookie domain 不受信任: %s", it.Domain)
+		}
+		if !strings.HasPrefix(it.Path, "/") {
+			return nil, fmt.Errorf("cookie path 必须以 / 开头")
+		}
+		if len(val) > 16*1024 {
+			return nil, fmt.Errorf("cookie value 过长")
+		}
+		if err := (&http.Cookie{Name: name, Value: val, Path: it.Path, Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode}).Valid(); err != nil {
+			return nil, fmt.Errorf("cookie 格式无效: %w", err)
+		}
 		it.Name = name
 		it.Value = val
 		out = append(out, it)
@@ -169,9 +182,11 @@ func readCookieFile(path string) ([]client.CookieItem, map[string]any, error) {
 }
 
 func writeCookieFile(path string, items []client.CookieItem) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	_ = os.Chmod(dir, 0o700)
 	if items == nil {
 		items = []client.CookieItem{}
 	}
@@ -179,7 +194,30 @@ func writeCookieFile(path string, items []client.CookieItem) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o644)
+	return secureSecretWrite(path, b)
+}
+
+func secureSecretWrite(path string, b []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
 }
 
 func backupCookieFile(path string) (string, error) {
@@ -200,7 +238,7 @@ func backupCookieFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(dst, b, 0o644); err != nil {
+	if err := secureSecretWrite(dst, b); err != nil {
 		return "", err
 	}
 	return dst, nil
@@ -728,7 +766,7 @@ func (s *Server) handleCookieImport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCookieProbe(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+	if r.Method != http.MethodPost {
 		writeJSON(w, 405, map[string]any{"ok": false, "error": "方法不允许"})
 		return
 	}

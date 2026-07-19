@@ -286,7 +286,7 @@ set FZSM_ADMIN_USERNAME=admin
 set FZSM_ADMIN_PASSWORD=your-password
 docker compose up -d --build
 ```
-打开：`http://服务器IP:8787/` 
+打开：`http://服务器IP:8787/`（对外监听前必须设置高强度管理密码；未配置密码时 API 仅接受实际本机来源）
 用户名：`admin` 
 密码：`FZSM_ADMIN_PASSWORD`
 

@@ -33,6 +33,8 @@ type Client struct {
 	primaryCookies map[string]string
 }
 
+const maxResponseBodySize = 8 << 20
+
 func New(apiBase, lotteryBase, cookieFile string) (*Client, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
@@ -52,6 +54,16 @@ func New(apiBase, lotteryBase, cookieFile string) (*Client, error) {
 		HTTP: &http.Client{
 			Timeout: 12 * time.Second,
 			Jar:     jar,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) == 0 {
+					return nil
+				}
+				first := via[0].URL
+				if !strings.EqualFold(req.URL.Scheme, first.Scheme) || !strings.EqualFold(req.URL.Host, first.Host) {
+					return fmt.Errorf("cross-origin redirect blocked: %s", req.URL.Redacted())
+				}
+				return nil
+			},
 		},
 		primaryCookies: map[string]string{},
 	}
@@ -87,9 +99,13 @@ func (c *Client) LoadCookies(path string) (int, error) {
 			}
 		}
 	}
-	if c.primaryCookies == nil {
-		c.primaryCookies = map[string]string{}
+	// Reload means replace, not merge: removed/rotated credentials must stop being sent.
+	c.primaryCookies = map[string]string{}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return 0, err
 	}
+	c.HTTP.Jar = jar
 	n := 0
 	for _, it := range items {
 		if it.Name == "" || it.Value == "" || it.Name == "<nil>" || it.Value == "<nil>" {
@@ -129,10 +145,12 @@ func (c *Client) LoadCookies(path string) (int, error) {
 			// IMPORTANT: leave Domain empty for cookiejar.SetCookies.
 			// Setting Domain explicitly often makes host-only requests miss the cookie.
 			c.HTTP.Jar.SetCookies(u, []*http.Cookie{{
-				Name:   it.Name,
-				Value:  it.Value,
-				Path:   path,
-				Secure: true,
+				Name:     it.Name,
+				Value:    it.Value,
+				Path:     path,
+				Secure:   true,
+				HttpOnly: it.HTTPOnly,
+				SameSite: http.SameSiteStrictMode,
 			}})
 			n++
 		}
@@ -168,9 +186,11 @@ func (c *Client) SaveCookies(path string) (int, error) {
 	if path == "" {
 		path = "auth/cookies.json"
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return 0, err
 	}
+	_ = os.Chmod(dir, 0o700)
 	seen := map[string]CookieItem{}
 	for _, host := range []string{"https://fanzisima.xyz/", "https://api.fanzisima.xyz/"} {
 		u, _ := url.Parse(host)
@@ -192,7 +212,23 @@ func (c *Client) SaveCookies(path string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if err := os.WriteFile(path, b, 0o644); err != nil {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return 0, err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return 0, err
+	}
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		return 0, err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return 0, err
+	}
+	if err := f.Close(); err != nil {
 		return 0, err
 	}
 	return len(jar), nil
@@ -249,7 +285,13 @@ func (c *Client) do(method, fullURL string, body any, headers map[string]string)
 		return 0, nil, err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize+1))
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	if len(raw) > maxResponseBodySize {
+		return resp.StatusCode, nil, fmt.Errorf("response body exceeds %d bytes", maxResponseBodySize)
+	}
 	var data any
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &data); err != nil {
@@ -261,10 +303,25 @@ func (c *Client) do(method, fullURL string, body any, headers map[string]string)
 	return resp.StatusCode, data, nil
 }
 
+func resolveEndpointURL(base, path string) (string, error) {
+	baseURL, err := url.Parse(strings.TrimRight(base, "/"))
+	if err != nil || baseURL.Scheme == "" || baseURL.Host == "" {
+		return "", fmt.Errorf("invalid API base URL")
+	}
+	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+		u, err := url.Parse(path)
+		if err != nil || !strings.EqualFold(u.Scheme, baseURL.Scheme) || !strings.EqualFold(u.Host, baseURL.Host) {
+			return "", fmt.Errorf("absolute endpoint outside configured API origin")
+		}
+		return u.String(), nil
+	}
+	return strings.TrimRight(base, "/") + "/" + strings.TrimLeft(path, "/"), nil
+}
+
 func (c *Client) StocksGet(path string) (int, any, error) {
-	u := path
-	if !strings.HasPrefix(path, "http") {
-		u = c.StocksBase + "/" + strings.TrimLeft(path, "/")
+	u, err := resolveEndpointURL(c.StocksBase, path)
+	if err != nil {
+		return 0, nil, err
 	}
 	return c.do("GET", u, nil, map[string]string{
 		"User-Agent": "fzsm-go-bot/0.1",
@@ -275,9 +332,9 @@ func (c *Client) StocksGet(path string) (int, any, error) {
 }
 
 func (c *Client) LotteryGet(path string) (int, any, error) {
-	u := path
-	if !strings.HasPrefix(path, "http") {
-		u = c.LotteryBase + "/" + strings.TrimLeft(path, "/")
+	u, err := resolveEndpointURL(c.LotteryBase, path)
+	if err != nil {
+		return 0, nil, err
 	}
 	return c.do("GET", u, nil, map[string]string{
 		"User-Agent": "fzsm-go-bot/0.1 (+lottery)",

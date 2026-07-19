@@ -28,6 +28,7 @@ func (s *Server) handleDBExport(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]any{"ok": false, "error": err.Error(), "message": "数据库快照失败"})
 		return
 	}
+	_ = os.Chmod(tmp, 0o600)
 	defer os.Remove(tmp)
 
 	f, err := os.Open(tmp)

@@ -35,9 +35,10 @@ type rotateWriter struct {
 // Returns a closer that should be deferred.
 func Setup(opts Options) (io.Closer, error) {
 	opts = withDefaults(opts)
-	if err := os.MkdirAll(opts.Dir, 0o755); err != nil {
+	if err := os.MkdirAll(opts.Dir, 0o700); err != nil {
 		return nil, err
 	}
+	_ = os.Chmod(opts.Dir, 0o700)
 	// cleanup once on startup
 	_ = Cleanup(opts.Dir, opts.Name, opts.MaxBackups, opts.MaxAgeDays)
 
@@ -100,10 +101,11 @@ func withDefaults(o Options) Options {
 
 func newRotateWriter(opts Options) (*rotateWriter, error) {
 	path := filepath.Join(opts.Dir, opts.Name)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, err
 	}
+	_ = f.Chmod(0o600)
 	st, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
@@ -160,17 +162,19 @@ func (w *rotateWriter) rotateLocked() error {
 	backup := fmt.Sprintf("%s.%s", w.path, ts)
 	if err := os.Rename(w.path, backup); err != nil && !os.IsNotExist(err) {
 		// if rename fails, reopen original and continue
-		f, oerr := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		f, oerr := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 		if oerr != nil {
 			return err
 		}
+		_ = f.Chmod(0o600)
 		w.file = f
 		return err
 	}
-	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
+	_ = f.Chmod(0o600)
 	w.file = f
 	w.size = 0
 	_ = Cleanup(w.opts.Dir, w.opts.Name, w.opts.MaxBackups, w.opts.MaxAgeDays)

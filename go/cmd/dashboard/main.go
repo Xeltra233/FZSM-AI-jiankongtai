@@ -4,8 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"fzsmbot/internal/config"
 	"fzsmbot/internal/dashboard"
@@ -40,6 +44,9 @@ func main() {
 	if *port > 0 {
 		cfg.Dashboard.Port = *port
 	}
+	if dashboardNeedsPassword(cfg.Dashboard.Host) && strings.TrimSpace(os.Getenv("FZSM_ADMIN_PASSWORD")) == "" && strings.TrimSpace(os.Getenv("FZSM_ADMIN_TOKEN")) == "" {
+		log.Fatal("refusing non-loopback dashboard listen without FZSM_ADMIN_PASSWORD")
+	}
 	// use config dashboard.port as-is (Go-only)
 
 	st, err := storage.Open(cfg.Storage.DBPath)
@@ -58,7 +65,25 @@ func main() {
 	}
 	addr := fmt.Sprintf("%s:%d", cfg.Dashboard.Host, cfg.Dashboard.Port)
 	log.Printf("go dashboard listening on http://%s", addr)
-	if err := http.ListenAndServe(addr, srv.Handler()); err != nil {
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Minute, // large authenticated DB exports may be slow
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+	if err := httpServer.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func dashboardNeedsPassword(host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" || host == "localhost" {
+		return false
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip == nil || !ip.IsLoopback()
 }

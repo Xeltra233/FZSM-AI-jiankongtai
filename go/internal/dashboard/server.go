@@ -36,13 +36,22 @@ func normalize(v any) any {
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
+			if dashboardSensitiveKey(k) {
+				out[k] = "[REDACTED]"
+				continue
+			}
 			out[k] = normalize(val)
 		}
 		return out
 	case map[any]any:
 		out := make(map[string]any, len(t))
 		for k, val := range t {
-			out[fmt.Sprint(k)] = normalize(val)
+			key := fmt.Sprint(k)
+			if dashboardSensitiveKey(key) {
+				out[key] = "[REDACTED]"
+				continue
+			}
+			out[key] = normalize(val)
 		}
 		return out
 	case []any:
@@ -54,6 +63,16 @@ func normalize(v any) any {
 	default:
 		// also handle map[interface{}]interface{} via reflection-like type assert fallback
 		return v
+	}
+}
+
+func dashboardSensitiveKey(k string) bool {
+	k = strings.Trim(strings.ToLower(strings.TrimSpace(k)), "_")
+	switch k {
+	case "password", "passwd", "token", "cookie", "authorization", "secret", "api_key", "apikey", "session":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -99,18 +118,18 @@ func (s *Server) Overview() map[string]any {
 	}
 	ka := asMap(sanitize(s.st.GetStateMap("auth_keepalive")))
 	riskEdges := map[string]any{
-		"slot":        asMap(sanitize(s.st.GetStateMap("lottery.slot_edge"))),
-		"yolo":        asMap(sanitize(s.st.GetStateMap("risk.edge.yolo"))),
-		"vip_bet":     asMap(sanitize(s.st.GetStateMap("risk.edge.vip_bet"))),
-		"borrow":      asMap(sanitize(s.st.GetStateMap("risk.edge.borrow"))),
-		"derivatives": asMap(sanitize(s.st.GetStateMap("risk.edge.derivatives"))),
-		"underwrite":  asMap(sanitize(s.st.GetStateMap("risk.edge.underwrite"))),
-		"vip_obs":      asMap(sanitize(s.st.GetStateMap("risk.edge.vip_obs"))),
-		"free_draw":    asMap(sanitize(s.st.GetStateMap("risk.obs.free_draw"))),
+		"slot":              asMap(sanitize(s.st.GetStateMap("lottery.slot_edge"))),
+		"yolo":              asMap(sanitize(s.st.GetStateMap("risk.edge.yolo"))),
+		"vip_bet":           asMap(sanitize(s.st.GetStateMap("risk.edge.vip_bet"))),
+		"borrow":            asMap(sanitize(s.st.GetStateMap("risk.edge.borrow"))),
+		"derivatives":       asMap(sanitize(s.st.GetStateMap("risk.edge.derivatives"))),
+		"underwrite":        asMap(sanitize(s.st.GetStateMap("risk.edge.underwrite"))),
+		"vip_obs":           asMap(sanitize(s.st.GetStateMap("risk.edge.vip_obs"))),
+		"free_draw":         asMap(sanitize(s.st.GetStateMap("risk.obs.free_draw"))),
 		"free_draw_premium": asMap(sanitize(s.st.GetStateMap("risk.obs.free_draw_premium"))),
-		"farm_harvest": asMap(sanitize(s.st.GetStateMap("risk.obs.farm_harvest"))),
-		"farm_steal":   asMap(sanitize(s.st.GetStateMap("risk.obs.farm_steal"))),
-		"side_hustle":  asMap(sanitize(s.st.GetStateMap("risk.obs.side_hustle"))),
+		"farm_harvest":      asMap(sanitize(s.st.GetStateMap("risk.obs.farm_harvest"))),
+		"farm_steal":        asMap(sanitize(s.st.GetStateMap("risk.obs.farm_steal"))),
+		"side_hustle":       asMap(sanitize(s.st.GetStateMap("risk.obs.side_hustle"))),
 	}
 
 	authOK := true
@@ -119,31 +138,31 @@ func (s *Server) Overview() map[string]any {
 	}
 	userName := firstNonEmpty(asString(service["user_name"]), asString(asMap(ka["stocks"])["user"]), "-")
 	return map[string]any{
-		"ts":            firstNum(last["ts"], float64(time.Now().Unix())),
-		"mode":          s.cfg.Mode,
-		"profile":       profile,
-		"auth_ok":       authOK,
-		"user_name":     userName,
-		"account":       account,
-		"index":         asMap(last["index"]),
-		"buy_count":     last["buy_count"],
-		"sell_count":    last["sell_count"],
-		"trade_count":   last["trade_count"],
-		"top_signals":   asSlice(last["top_signals"]),
-		"recent_trades": sanitize(s.st.RecentTrades(30)),
-		"trade_stats":   s.st.TradeStats(),
+		"ts":                  firstNum(last["ts"], float64(time.Now().Unix())),
+		"mode":                s.cfg.Mode,
+		"profile":             profile,
+		"auth_ok":             authOK,
+		"user_name":           userName,
+		"account":             account,
+		"index":               asMap(last["index"]),
+		"buy_count":           last["buy_count"],
+		"sell_count":          last["sell_count"],
+		"trade_count":         last["trade_count"],
+		"top_signals":         asSlice(last["top_signals"]),
+		"recent_trades":       sanitize(s.st.RecentTrades(30)),
+		"trade_stats":         s.st.TradeStats(),
 		"bankruptcy_cooldown": trader.BankruptcyStatus(s.st),
-		"service":       service,
-		"control":       control,
-		"feature_flags": sanitize(flags.Get(s.cfg, s.st)),
-		"regime":        regime,
-		"risk":          risk,
-		"log_tail":      tailLog(filepath.Join(s.cfg.Storage.LogDir, "bot.log"), 30),
-		"equity_series": s.equitySeries(240),
-		"farm":          asMap(sanitize(s.st.GetStateMap("farm"))),
-		"side_hustle":   asMap(sanitize(s.st.GetStateMap("side_hustle"))),
-		"derivatives":   asMap(sanitize(s.st.GetStateMap("derivatives"))),
-		"modules":       asMap(sanitize(s.st.GetStateMap("modules"))),
+		"service":             service,
+		"control":             control,
+		"feature_flags":       sanitize(flags.Get(s.cfg, s.st)),
+		"regime":              regime,
+		"risk":                risk,
+		"log_tail":            tailLog(filepath.Join(s.cfg.Storage.LogDir, "bot.log"), 30),
+		"equity_series":       s.equitySeries(240),
+		"farm":                asMap(sanitize(s.st.GetStateMap("farm"))),
+		"side_hustle":         asMap(sanitize(s.st.GetStateMap("side_hustle"))),
+		"derivatives":         asMap(sanitize(s.st.GetStateMap("derivatives"))),
+		"modules":             asMap(sanitize(s.st.GetStateMap("modules"))),
 		"bias": map[string]any{
 			"calendar":    asMap(sanitize(s.st.GetStateMap("bias.calendar"))),
 			"leaderboard": asMap(sanitize(s.st.GetStateMap("bias.leaderboard"))),
@@ -155,8 +174,8 @@ func (s *Server) Overview() map[string]any {
 			"vip":  asMap(sanitize(s.st.GetStateMap("manual.vip"))),
 			"feed": asMap(sanitize(s.st.GetStateMap("manual.activity"))),
 		},
-		"llm_usage":      asMap(sanitize(s.st.GetStateMap("llm_usage"))),
-		"notes":          []string{"go-dashboard"},
+		"llm_usage": asMap(sanitize(s.st.GetStateMap("llm_usage"))),
+		"notes":     []string{"go-dashboard"},
 	}
 }
 
@@ -382,7 +401,9 @@ func (s *Server) Handler() http.Handler {
 		}
 		if r.Method == http.MethodPost {
 			var payload map[string]any
-			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if !decodeDashboardJSON(w, r, &payload) {
+				return
+			}
 			cur := s.st.GetStateMap("control")
 			mode := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["trade_mode"])))
 			if mode == "" || mode == "<nil>" {
@@ -455,7 +476,9 @@ func (s *Server) Handler() http.Handler {
 		}
 		if r.Method == http.MethodPost {
 			var payload map[string]any
-			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if !decodeDashboardJSON(w, r, &payload) {
+				return
+			}
 			clear := false
 			switch t := payload["clear"].(type) {
 			case bool:
@@ -477,6 +500,10 @@ func (s *Server) Handler() http.Handler {
 				writeJSON(w, 400, map[string]any{"ok": false, "error": "room_id required (or clear=true)"})
 				return
 			}
+			if len(rid) > 128 {
+				writeJSON(w, 400, map[string]any{"ok": false, "error": "room_id 过长"})
+				return
+			}
 			mode := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["mode"])))
 			if mode == "" || mode == "<nil>" {
 				mode = "preferred"
@@ -490,10 +517,18 @@ func (s *Server) Handler() http.Handler {
 				"updated_at": float64(time.Now().UnixNano()) / 1e9,
 			}
 			if name := strings.TrimSpace(fmt.Sprint(payload["name"])); name != "" && name != "<nil>" {
+				if len(name) > 200 {
+					writeJSON(w, 400, map[string]any{"ok": false, "error": "name 过长"})
+					return
+				}
 				data["name"] = name
 			}
 			// optional room password for private VIP rooms (stored only in local runtime_state)
 			if pwd := strings.TrimSpace(fmt.Sprint(payload["password"])); pwd != "" && pwd != "<nil>" && pwd != "null" {
+				if len(pwd) > 256 || strings.ContainsAny(pwd, "\r\n") {
+					writeJSON(w, 400, map[string]any{"ok": false, "error": "房间密码格式无效"})
+					return
+				}
 				data["password"] = pwd
 				data["has_password"] = true
 			} else if hp, ok := payload["has_password"].(bool); ok && hp {
@@ -532,7 +567,9 @@ func (s *Server) Handler() http.Handler {
 		}
 		if r.Method == http.MethodPost {
 			var payload map[string]any
-			_ = json.NewDecoder(r.Body).Decode(&payload)
+			if !decodeDashboardJSON(w, r, &payload) {
+				return
+			}
 			id := strings.TrimSpace(fmt.Sprint(payload["id"]))
 			if id == "" || id == "<nil>" {
 				id = strings.TrimSpace(fmt.Sprint(payload["flag"]))
@@ -560,7 +597,28 @@ func (s *Server) Handler() http.Handler {
 		}
 		writeJSON(w, 405, map[string]any{"error": "method not allowed"})
 	})
-	return s.withAdminAPIGate(mux)
+	return withSecurityHeaders(s.withAdminAPIGate(mux))
+}
+
+func decodeDashboardJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(dst); err != nil {
+		writeJSON(w, 400, map[string]any{"ok": false, "error": "请求 JSON 无效或过大"})
+		return false
+	}
+	return true
+}
+
+func withSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func writeJSON(w http.ResponseWriter, code int, payload any) {

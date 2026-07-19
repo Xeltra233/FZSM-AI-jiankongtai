@@ -1,5 +1,5 @@
 # FZSM AI dashboard + bot (Go-only, Docker)
-FROM golang:1.22-bookworm AS build
+FROM golang:1.26.5-bookworm AS build
 WORKDIR /src
 COPY go/go.mod go/go.sum ./
 RUN go mod download

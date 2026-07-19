@@ -94,3 +94,54 @@ func TestRequestSecureOnlyTrustsLocalProxyHeaders(t *testing.T) {
 		t.Fatal("local reverse proxy https header not trusted")
 	}
 }
+
+func TestOpenLocalModeRejectsExternalAPI(t *testing.T) {
+	t.Setenv(adminPasswordEnv, "")
+	t.Setenv(adminTokenEnv, "")
+	s := &Server{}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	h := s.withAdminAPIGate(next)
+	external := httptest.NewRequest(http.MethodGet, "/api/overview", nil)
+	external.RemoteAddr = "198.51.100.10:1234"
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, external)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("external open-local API allowed: %d %s", rr.Code, rr.Body.String())
+	}
+	local := httptest.NewRequest(http.MethodGet, "/api/overview", nil)
+	local.RemoteAddr = "127.0.0.1:1234"
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, local)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("local API denied: %d", rr.Code)
+	}
+}
+func TestOpenLocalBehindProxyUsesActualForwardedClient(t *testing.T) {
+	t.Setenv(adminPasswordEnv, "")
+	t.Setenv(adminTokenEnv, "")
+	req := httptest.NewRequest(http.MethodGet, "/api/overview", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	if requestClientLoopback(req) {
+		t.Fatal("external forwarded client treated as loopback")
+	}
+}
+func TestSessionUnsafeRequestRejectsCrossOrigin(t *testing.T) {
+	t.Setenv(adminPasswordEnv, "test-pass")
+	tok, _, err := createAdminSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer destroyAdminSession(tok)
+	s := &Server{}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	req := httptest.NewRequest(http.MethodPost, "http://panel.local/api/control", strings.NewReader(`{}`))
+	req.Host = "panel.local"
+	req.Header.Set("Origin", "https://evil.example")
+	req.AddCookie(&http.Cookie{Name: adminSessionCookie, Value: tok})
+	rr := httptest.NewRecorder()
+	s.withAdminAPIGate(next).ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin session write allowed: %d", rr.Code)
+	}
+}
